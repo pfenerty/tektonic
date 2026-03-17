@@ -33,7 +33,7 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^25.0.0",
     "cdk8s": "^2.68.0",
     "cdk8s-cli": "^2.198.0",
     "constructs": "^10.3.0",
