@@ -142,7 +142,13 @@ export interface TaskCacheSpec {
     multiThreadCompression?: boolean;
 }
 
-/** Options for constructing a {@link Task}. */
+/** Minimum contract shared by all task-like nodes in a pipeline. */
+export interface TaskLike {
+    readonly name: string;
+    readonly synthesizable: boolean;
+}
+
+/** Options for constructing a {@link TaskDef}. */
 export interface TaskOptions {
     /** Task name used in Tekton manifests and pipeline task references. */
     name: string;
@@ -153,7 +159,7 @@ export interface TaskOptions {
     /** Ordered list of steps the task executes. */
     steps: TaskStepSpec[];
     /** Tasks that must complete before this task runs (dependency graph edges). */
-    needs?: Task[];
+    needs?: TaskDef[];
     /** Override or extend the default step template (merged with security context defaults). */
     stepTemplate?: Record<string, unknown>;
     /**
@@ -183,13 +189,14 @@ export interface TaskOptions {
  * All steps inherit a secure-by-default `stepTemplate` that drops all
  * capabilities and enables seccomp. Override via the `stepTemplate` option.
  */
-export class Task {
+export class TaskDef implements TaskLike {
+    readonly synthesizable = true as const;
     readonly name: string;
     readonly params: Param[];
     readonly workspaces: Workspace[];
     readonly steps: TaskStepSpec[];
     /** Tasks that must complete before this task runs. */
-    readonly needs: Task[];
+    readonly needs: TaskDef[];
     readonly stepTemplate?: Record<string, unknown>;
     /** Status context reported to the external system. */
     readonly statusContext?: string;
@@ -262,12 +269,12 @@ export class Task {
     private static _makePvcRestoreScript(c: TaskCacheSpec, taskName?: string): string {
         const wsName = c.workspace!.name;
         const wsPath = `$(workspaces.${wsName}.path)`;
-        const hashFile = Task._pvcHashFilePath(c, taskName);
-        const threadFlag = Task._threadFlag(c);
+        const hashFile = TaskDef._pvcHashFilePath(c, taskName);
+        const threadFlag = TaskDef._threadFlag(c);
         const label = `restore-${c.name}-cache`;
 
         if (c.compress) {
-            const hashExpr = Task._hashExpr(c);
+            const hashExpr = TaskDef._hashExpr(c);
             return `#!/usr/bin/env nu
 def log [msg: string] {
   print $"[(date now | format date '%H:%M:%S')] ${label}: ($msg)"
@@ -320,11 +327,11 @@ fi`;
     private static _makePvcSaveScript(c: TaskCacheSpec, taskName?: string): string {
         const wsName = c.workspace!.name;
         const wsPath = `$(workspaces.${wsName}.path)`;
-        const hashFile = Task._pvcHashFilePath(c, taskName);
+        const hashFile = TaskDef._pvcHashFilePath(c, taskName);
         const compressionLevel = c.compressionLevel ?? 1;
         const maxEntries = c.maxEntries ?? 3;
         const forceSave = c.forceSave ?? false;
-        const threadFlag = Task._threadFlag(c);
+        const threadFlag = TaskDef._threadFlag(c);
         const label = `save-${c.name}-cache`;
 
         if (c.compress) {
@@ -390,9 +397,9 @@ ${saveCondition}`;
         const gcs = c.backend as GcsCacheBackend;
         const bucket = gcs.bucket;
         const prefix = gcs.prefix ?? "";
-        const hashFile = Task._gcsHashFilePath(c, taskName);
-        const hashExpr = Task._hashExpr(c);
-        const threadFlag = Task._threadFlag(c);
+        const hashFile = TaskDef._gcsHashFilePath(c, taskName);
+        const hashExpr = TaskDef._hashExpr(c);
+        const threadFlag = TaskDef._threadFlag(c);
         const label = `restore-${c.name}-cache`;
 
         return `#!/usr/bin/env nu
@@ -433,11 +440,11 @@ if $exists {
         const gcs = c.backend as GcsCacheBackend;
         const bucket = gcs.bucket;
         const prefix = gcs.prefix ?? "";
-        const hashFile = Task._gcsHashFilePath(c, taskName);
+        const hashFile = TaskDef._gcsHashFilePath(c, taskName);
         const compressionLevel = c.compressionLevel ?? DEFAULT_GCS_COMPRESSION_LEVEL;
         const maxEntries = c.maxEntries ?? 3;
         const forceSave = c.forceSave ?? false;
-        const threadFlag = Task._threadFlag(c);
+        const threadFlag = TaskDef._threadFlag(c);
         const label = `save-${c.name}-cache`;
         const pathList = c.paths.map((p) => `"${p}"`).join(", ");
         const tmpDir = c.workingDir ?? "/tmp";
@@ -509,8 +516,8 @@ log $"uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"`;
     ): TaskStepSpec {
         const script =
             c.backend?.type === "gcs"
-                ? Task._makeGcsRestoreScript(c, taskName)
-                : Task._makePvcRestoreScript(c, taskName);
+                ? TaskDef._makeGcsRestoreScript(c, taskName)
+                : TaskDef._makePvcRestoreScript(c, taskName);
         return {
             name: `restore-${c.name}-cache`,
             image: c.image ?? (c.backend?.type === "gcs" ? DEFAULT_GCS_CACHE_IMAGE : DEFAULT_BASE_IMAGE),
@@ -531,8 +538,8 @@ log $"uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"`;
     ): TaskStepSpec {
         const script =
             c.backend?.type === "gcs"
-                ? Task._makeGcsSaveScript(c, taskName)
-                : Task._makePvcSaveScript(c, taskName);
+                ? TaskDef._makeGcsSaveScript(c, taskName)
+                : TaskDef._makePvcSaveScript(c, taskName);
         return {
             name: `save-${c.name}-cache`,
             image: c.image ?? (c.backend?.type === "gcs" ? DEFAULT_GCS_CACHE_IMAGE : DEFAULT_BASE_IMAGE),
@@ -570,11 +577,11 @@ log $"uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"`;
             ...(stepSecurityContext ?? {}),
         };
         const restoreSteps = this.caches.map((c) =>
-            Task._makeCacheRestoreStep(c, this.name),
+            TaskDef._makeCacheRestoreStep(c, this.name),
         );
         const saveSteps = this.caches
             .filter((c) => c.saveStrategy !== "finally")
-            .map((c) => Task._makeCacheSaveStep(c, this.name));
+            .map((c) => TaskDef._makeCacheSaveStep(c, this.name));
         const reporterStep =
             this.statusReporter && this.statusContext
                 ? [this.statusReporter.finalStep(this.statusContext)]
@@ -630,10 +637,10 @@ log $"uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"`;
                                   (w) => w.name !== c.workspace!.name,
                               ),
                           ];
-                return new Task({
+                return new TaskDef({
                     name: `save-${c.name}-cache-${this.name}`,
                     workspaces: taskWorkspaces,
-                    steps: [Task._makeCacheSaveStep(c, this.name)],
+                    steps: [TaskDef._makeCacheSaveStep(c, this.name)],
                     stepTemplate: this.stepTemplate,
                 });
             });
@@ -669,3 +676,8 @@ log $"uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"`;
         return spec;
     }
 }
+
+// Backward-compatible aliases — preserves all existing `new Task()` and
+// `instanceof Task` usage without any changes to call sites.
+export const Task = TaskDef;
+export type Task = TaskDef;
