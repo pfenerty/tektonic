@@ -12,6 +12,8 @@ flox activate -- npm run synth
 
 The environment is defined in `.flox/env/manifest.toml` and currently provides:
 - Node.js 24.13.0 (npm bundled)
+- Beads (`bd`) — AI-native issue tracker CLI
+- Repomix — codebase packer for AI context
 
 ## Common Commands
 
@@ -22,6 +24,8 @@ The environment is defined in `.flox/env/manifest.toml` and currently provides:
 | Synthesize manifests | `flox activate -- npm run synth` |
 | Install dependencies | `flox activate -- npm install` |
 | Watch mode tests | `flox activate -- npm run test:watch` |
+| List issues | `flox activate -- bd list` |
+| Update codebase snapshot | `flox activate -- repomix` |
 
 ## Issue Tracking
 
@@ -42,11 +46,19 @@ Priorities: `0`=critical, `1`=high, `2`=medium (default), `3`=low, `4`=backlog
 Work is NOT complete until pushed. Before ending a session:
 
 1. Close finished issues, file issues for remaining work
-2. Run quality gates if code changed (`flox activate -- npm test && npm run build`)
+2. Run quality gates if code changed (`flox activate -- npm test && flox activate -- npm run build`)
 3. Push:
    ```bash
    git pull --rebase && git push
    ```
+
+## Codebase Context
+
+`repomix-output.xml` is a packed snapshot of the entire codebase used as AI context. It is not tracked in git. Regenerate it after significant changes:
+
+```bash
+flox activate -- repomix
+```
 
 ## Using Tektonic
 

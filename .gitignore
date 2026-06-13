@@ -4,3 +4,4 @@ synth-output/
 /lib/
 *.js.map
 docs/generated/
+repomix-output.xml

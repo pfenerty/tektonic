@@ -1,0 +1,21 @@
+{
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml"
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      ".beads/beads.db*",
+      ".beads/daemon.*",
+      ".beads/bd.sock",
+      ".beads/interactions.jsonl",
+      ".beads/last-touched",
+      ".beads/.local_version",
+      "repomix-output.xml",
+      "dist/**",
+      "*.js.map"
+    ]
+  }
+}
