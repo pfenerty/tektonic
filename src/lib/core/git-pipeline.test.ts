@@ -157,6 +157,47 @@ describe('GitPipeline', () => {
     expect((test as any).stepTemplate.workingDir).toBe('/custom/path');
   });
 
+  it('cloneTask declares 8 results', () => {
+    const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
+    expect(pipeline.cloneTask.results).toHaveLength(8);
+    const names = pipeline.cloneTask.results.map(r => r.name);
+    expect(names).toContain('commit');
+    expect(names).toContain('short-sha');
+    expect(names).toContain('branch');
+    expect(names).toContain('commit-message');
+    expect(names).toContain('author-name');
+    expect(names).toContain('author-email');
+    expect(names).toContain('timestamp');
+    expect(names).toContain('remote-url');
+  });
+
+  it('cloneTask results are bound — toString() produces pipeline reference', () => {
+    const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
+    const commit = pipeline.cloneTask.results.find(r => r.name === 'commit')!;
+    expect(commit.toString()).toBe('$(tasks.git-clone.results.commit)');
+    const shortSha = pipeline.cloneTask.results.find(r => r.name === 'short-sha')!;
+    expect(shortSha.toString()).toBe('$(tasks.git-clone.results.short-sha)');
+  });
+
+  it('synthesized git-clone Task spec includes results array', () => {
+    const ws = new Workspace({ name: 'workspace' });
+    const pipeline = new GitPipeline({ name: 'ci', workspace: ws, tasks: [makeTask('test')] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline.cloneTask.synth(chart, 'ns');
+    const manifest = chart.toJson().find((m: any) => m.kind === 'Task' && m.metadata.name === 'git-clone');
+    expect(manifest.spec.results).toHaveLength(8);
+    expect(manifest.spec.results.find((r: any) => r.name === 'commit')).toBeDefined();
+  });
+
+  it('clone step script writes to result paths instead of git-metadata.json', () => {
+    const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
+    const script = pipeline.cloneTask.steps[0].script!;
+    expect(script).toContain('$(results.commit.path)');
+    expect(script).toContain('$(results.short-sha.path)');
+    expect(script).not.toContain('git-metadata.json');
+  });
+
   it('does not throw or mutate a non-synthesizable TaskLike', () => {
     const stub: TaskLike = {
       name: 'hub-task',

@@ -19,6 +19,7 @@ import { App, Chart } from 'cdk8s';
 import { Task } from './core/task';
 import { Pipeline } from './core/pipeline';
 import { HubTaskRef } from './core/hub-task-ref';
+import { Result } from './core/result';
 import { Param } from './core/param';
 import { Workspace } from './core/workspace';
 
@@ -117,6 +118,24 @@ describe('Tekton v1 schema conformance — Task', () => {
 
     for (const step of manifest.spec.steps as AnyObj[]) {
       assertNoUnknownFields(step, 'v1.Step', 'spec.steps[]');
+    }
+  });
+
+  it('TaskSpec with results conforms to v1.TaskSpec and v1.TaskResult schema', () => {
+    const commit = new Result({ name: 'commit', description: 'Full commit SHA' });
+    const branch = new Result({ name: 'branch' });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    new Task({
+      name: 'clone',
+      results: [commit, branch],
+      steps: [{ name: 's', image: 'alpine' }],
+    }).synth(chart, 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    assertNoUnknownFields(manifest.spec as AnyObj, 'v1.TaskSpec', 'spec');
+    for (const result of manifest.spec.results as AnyObj[]) {
+      assertNoUnknownFields(result, 'v1.TaskResult', 'spec.results[]');
     }
   });
 

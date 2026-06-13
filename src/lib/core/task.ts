@@ -10,6 +10,7 @@ import {
 } from "../constants";
 import { Param } from "./param";
 import { Workspace } from "./workspace";
+import { Result } from "./result";
 import type { StatusReporter } from "./status-reporter";
 import type { CacheBackend, GcsCacheBackend } from "./cache-backend";
 
@@ -180,6 +181,8 @@ export interface TaskOptions {
      * The cache workspace is auto-registered if not already in `workspaces`.
      */
     caches?: TaskCacheSpec[];
+    /** Results this task produces. Each result is bound to the task name at construction time. */
+    results?: Result[];
 }
 
 /**
@@ -208,6 +211,8 @@ export class TaskDef implements TaskLike {
     readonly statusReporter?: StatusReporter;
     /** Cache declarations — restore/save steps are injected at synthesis time. */
     readonly caches: TaskCacheSpec[];
+    /** Results this task produces, bound to this task's name at construction time. */
+    readonly results: Result[];
 
     constructor(opts: TaskOptions) {
         this.name = opts.name;
@@ -234,6 +239,8 @@ export class TaskDef implements TaskLike {
                 (this.workspaces as Workspace[]).push(c.workspace);
             }
         }
+        this.results = opts.results ?? [];
+        for (const r of this.results) r._bindToTask(this.name);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -615,6 +622,9 @@ log $"uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"`;
                 }),
                 ...(this.workspaces.length > 0 && {
                     workspaces: this.workspaces.map((w) => w.toSpec()),
+                }),
+                ...(this.results.length > 0 && {
+                    results: this.results.map((r) => r.toSpec()),
                 }),
                 steps,
             },

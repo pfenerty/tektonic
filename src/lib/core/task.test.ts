@@ -3,6 +3,7 @@ import { App, Chart } from 'cdk8s';
 import { Task } from './task';
 import { Param } from './param';
 import { Workspace } from './workspace';
+import { Result } from './result';
 import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES, DEFAULT_BASE_IMAGE, DEFAULT_GCS_CACHE_IMAGE } from '../constants';
 import { GitHubStatusReporter } from '../reporters/github-status-reporter';
 
@@ -184,6 +185,37 @@ describe('Task', () => {
       const manifest = chart.toJson()[0];
       expect(manifest.spec.params).toBeUndefined();
       expect(manifest.spec.workspaces).toBeUndefined();
+    });
+
+    it('emits results array in synthesized spec', () => {
+      const commit = new Result({ name: 'commit' });
+      const shortSha = new Result({ name: 'short-sha', description: 'Abbreviated SHA', type: 'string' });
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      const t = new Task({
+        name: 'clone',
+        results: [commit, shortSha],
+        steps: [{ name: 's', image: 'alpine' }],
+      });
+      t.synth(chart, 'ns');
+      const manifest = chart.toJson()[0];
+      expect(manifest.spec.results).toHaveLength(2);
+      expect(manifest.spec.results[0]).toEqual({ name: 'commit', type: 'string' });
+      expect(manifest.spec.results[1]).toEqual({ name: 'short-sha', type: 'string', description: 'Abbreviated SHA' });
+    });
+
+    it('omits results when none declared', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      const t = new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] });
+      t.synth(chart, 'ns');
+      expect(chart.toJson()[0].spec.results).toBeUndefined();
+    });
+
+    it('results are bound to task name after construction', () => {
+      const commit = new Result({ name: 'commit' });
+      new Task({ name: 'git-clone', results: [commit], steps: [{ name: 's', image: 'alpine' }] });
+      expect(commit.toString()).toBe('$(tasks.git-clone.results.commit)');
     });
   });
 

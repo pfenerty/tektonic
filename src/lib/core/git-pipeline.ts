@@ -1,6 +1,7 @@
 import { Param } from "./param";
 import { Workspace } from "./workspace";
 import { Task, TaskLike } from "./task";
+import { Result } from "./result";
 import { Pipeline, PipelineOptions } from "./pipeline";
 import { DEFAULT_BASE_IMAGE } from "../constants";
 
@@ -58,10 +59,23 @@ export class GitPipeline extends Pipeline {
         const url = new Param({ name: "url" });
         const revision = new Param({ name: "revision" });
 
+        const commitResult      = new Result({ name: "commit",         description: "Full commit SHA" });
+        const shortShaResult    = new Result({ name: "short-sha",      description: "Abbreviated commit SHA" });
+        const branchResult      = new Result({ name: "branch",         description: "Checked-out branch/revision" });
+        const commitMsgResult   = new Result({ name: "commit-message", description: "Commit subject line" });
+        const authorNameResult  = new Result({ name: "author-name",    description: "Commit author name" });
+        const authorEmailResult = new Result({ name: "author-email",   description: "Commit author email" });
+        const timestampResult   = new Result({ name: "timestamp",      description: "Author timestamp (ISO 8601)" });
+        const remoteUrlResult   = new Result({ name: "remote-url",     description: "Repository remote URL" });
+
         const cloneTask = new Task({
             name: "git-clone",
             params: [url, revision],
             workspaces: [workspace],
+            results: [
+                commitResult, shortShaResult, branchResult, commitMsgResult,
+                authorNameResult, authorEmailResult, timestampResult, remoteUrlResult,
+            ],
             steps: [
                 {
                     name: "clone",
@@ -86,7 +100,7 @@ git remote add origin ${url}
 git fetch --depth=1 origin ${revision}
 git checkout -b ${revision} FETCH_HEAD
 
-# Capture git metadata for downstream tasks
+# Write git metadata as Tekton results for downstream tasks.
 let sha = (git rev-parse HEAD | str trim)
 let short_sha = (git rev-parse --short HEAD | str trim)
 let commit_message = (git log -1 --format=%s | str trim)
@@ -94,16 +108,14 @@ let author_name = (git log -1 --format=%an | str trim)
 let author_email = (git log -1 --format=%ae | str trim)
 let timestamp = (git log -1 --format=%aI | str trim)
 
-{
-    sha: $sha,
-    short_sha: $short_sha,
-    branch: "${revision}",
-    commit_message: $commit_message,
-    author_name: $author_name,
-    author_email: $author_email,
-    timestamp: $timestamp,
-    remote_url: "${url}",
-} | to json | save ${workspace.path}/git-metadata.json`,
+$sha            | save -f ${commitResult.path}
+$short_sha      | save -f ${shortShaResult.path}
+"${revision}"   | save -f ${branchResult.path}
+$commit_message | save -f ${commitMsgResult.path}
+$author_name    | save -f ${authorNameResult.path}
+$author_email   | save -f ${authorEmailResult.path}
+$timestamp      | save -f ${timestampResult.path}
+"${url}"        | save -f ${remoteUrlResult.path}`,
                 },
             ],
         });
