@@ -68,4 +68,58 @@ describe('gated()', () => {
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.when).toBeUndefined();
   });
+
+  it('emits retries in pipeline task spec', () => {
+    const gatedBuild = gated(build, { retries: 3 });
+    const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline._build(chart, 'pipeline', 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
+    expect(buildEntry?.retries).toBe(3);
+  });
+
+  it('emits timeout in pipeline task spec', () => {
+    const gatedBuild = gated(build, { timeout: '30m' });
+    const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline._build(chart, 'pipeline', 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
+    expect(buildEntry?.timeout).toBe('30m');
+  });
+
+  it('plain tasks have no retries or timeout', () => {
+    const pipeline = new Pipeline({ name: 'ci', tasks: [clone, build] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline._build(chart, 'pipeline', 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
+    expect(buildEntry?.retries).toBeUndefined();
+    expect(buildEntry?.timeout).toBeUndefined();
+  });
+
+  it('can combine when, retries, and timeout in one override', () => {
+    const gatedBuild = gated(build, {
+      when: whenExpr,
+      retries: 2,
+      timeout: '1h',
+    });
+    const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline._build(chart, 'pipeline', 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
+    expect(buildEntry?.when).toEqual(whenExpr);
+    expect(buildEntry?.retries).toBe(2);
+    expect(buildEntry?.timeout).toBe('1h');
+  });
 });

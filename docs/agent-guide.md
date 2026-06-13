@@ -302,6 +302,224 @@ The reporter appends a final step that calls the GitHub Commit Status API. It re
 - A Kubernetes Secret named `github-token` with key `token` containing a GitHub token with `repo:status` scope
 - `repo-full-name` and `revision` params — auto-injected by `GitHubStatusReporter` into any task that uses it
 
+## Result
+
+Tasks can declare typed results that downstream tasks (or the pipeline itself) reference via Tekton interpolation expressions.
+
+```typescript
+import { Result } from '@pfenerty/tektonic';
+
+const commit = new Result({ name: 'commit', description: 'Full commit SHA' });
+const branch = new Result({ name: 'branch' });
+
+const cloneTask = new Task({
+  name: 'git-clone',
+  results: [commit, branch],
+  steps: [{
+    name: 'clone',
+    image: 'alpine/git',
+    script: `#!/bin/sh
+git clone ... && git rev-parse HEAD | tee ${commit.path}`,
+  }],
+});
+
+// In a downstream task, interpolate results:
+const buildTask = new Task({
+  name: 'build',
+  needs: [cloneTask],
+  steps: [{
+    name: 'build',
+    image: 'node:22',
+    script: `#!/bin/sh
+echo "Building commit ${commit}"`,
+    // commit.toString() → "$(tasks.git-clone.results.commit)"
+  }],
+});
+```
+
+**Result options:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Result name in Tekton manifests |
+| `description?` | `string` | Human-readable description |
+
+**Key properties:**
+- `result.path` — path to write the result value: `$(results.<name>.path)`
+- `result.toString()` — pipeline-level reference: `$(tasks.<taskName>.results.<name>)`
+
+`GitPipeline` pre-declares results for the built-in git-clone task: `commit`, `short-sha`, `branch`, `commit-message`, `author-name`, `author-email`, `timestamp`, `remote-url`.
+
+---
+
+## HubTaskRef
+
+`HubTaskRef` lets you reference a Tekton Task published on [ArtifactHub](https://artifacthub.io/packages/search?kind=7) without writing a local Task definition. The resolver-based `taskRef` is synthesized automatically.
+
+```typescript
+import { HubTaskRef } from '@pfenerty/tektonic';
+
+const gitClone = new HubTaskRef({
+  taskName: 'git-clone',
+  version: '0.9',
+  params: [urlParam, revParam],
+  workspaces: [workspace],
+});
+
+// Use like any other task in needs/pipeline:
+const build = new Task({
+  name: 'build',
+  needs: [gitClone],
+  steps: [...],
+});
+
+const pipeline = new Pipeline({ name: 'ci', tasks: [build] });
+```
+
+`HubTaskRef` implements `TaskLike` — it participates in the dependency graph, declares its params/workspaces for inference, but produces no `Task` manifest (it references an externally published one).
+
+**HubTaskRef options:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `taskName` | `string` | Name of the published Task on ArtifactHub |
+| `version` | `string` | Task version string (e.g. `"0.9"`) |
+| `params?` | `Param[]` | Params the task accepts (used for pipeline-level inference) |
+| `workspaces?` | `Workspace[]` | Workspaces the task requires |
+| `needs?` | `TaskLike[]` | Upstream dependencies |
+| `catalog?` | `string` | ArtifactHub catalog name. Defaults to `"tekton"` |
+
+---
+
+## Conditional Tasks (gated)
+
+`gated()` wraps a task with per-pipeline-edge overrides — `when` expressions, retry counts, and timeouts. The same task instance can be conditional in one pipeline and unconditional in another.
+
+```typescript
+import { gated } from '@pfenerty/tektonic';
+
+const pipeline = new Pipeline({
+  tasks: [
+    clone,
+    // build only runs on push events, retried up to 2 times, with a 30-minute cap
+    gated(build, {
+      when: [{ input: '$(params.event-type)', operator: 'in', values: ['push'] }],
+      retries: 2,
+      timeout: '30m',
+    }),
+  ],
+});
+```
+
+Overrides are applied at pipeline-spec time only — the underlying `Task` manifest is unchanged.
+
+**PipelineTaskOverrides:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `when?` | `WhenExpression[]` | Conditional expressions — all must match for the task to run |
+| `retries?` | `number` | Retry count on failure |
+| `timeout?` | `string` | Max duration as a Go duration string (e.g. `"10m"`, `"1h30m"`) |
+
+**WhenExpression:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `input` | `string` | Pipeline expression to evaluate (e.g. `"$(params.type)"`) |
+| `operator` | `'in' \| 'notin'` | Comparison operator |
+| `values` | `string[]` | Values to match against |
+
+---
+
+## Sidecars and Volumes
+
+Tasks can declare sidecar containers (run alongside steps for the task pod's lifetime) and additional volumes (available for mounting in steps and sidecars).
+
+```typescript
+const dbTest = new Task({
+  name: 'db-test',
+  // shared emptyDir volume between step and sidecar
+  volumes: [{ name: 'tmp', emptyDir: {} }],
+  sidecars: [{
+    name: 'postgres',
+    image: 'postgres:16-alpine',
+    env: [
+      { name: 'POSTGRES_DB', value: 'testdb' },
+      { name: 'POSTGRES_PASSWORD', value: 'test' },
+    ],
+    readinessProbe: {
+      exec: { command: ['pg_isready', '-U', 'postgres'] },
+      initialDelaySeconds: 5,
+    },
+  }],
+  steps: [{
+    name: 'test',
+    image: 'node:22-alpine',
+    env: [{ name: 'DATABASE_URL', value: 'postgres://postgres:test@localhost/testdb' }],
+    script: '#!/bin/sh\nnpm test',
+  }],
+});
+```
+
+**Sidecar options** (`TaskSidecarSpec`) — mirrors step fields minus `onError`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Sidecar name (unique within the task) |
+| `image` | `string` | Container image |
+| `command?` | `string[]` | Entrypoint override |
+| `args?` | `string[]` | Arguments |
+| `script?` | `string` | Inline script |
+| `workingDir?` | `string` | Working directory |
+| `env?` | `EnvSpec[]` | Environment variables |
+| `computeResources?` | `ResourceSpec` | CPU/memory requests and limits |
+| `securityContext?` | `object` | Per-container security context |
+| `readinessProbe?` | `object` | Kubernetes readiness probe (Tekton waits for this before starting steps) |
+
+**Volume spec** (`TaskVolumeSpec`) — follows the Kubernetes `v1.Volume` schema, `name` is required:
+
+```typescript
+{ name: 'shared', emptyDir: {} }
+{ name: 'config', configMap: { name: 'my-config' } }
+{ name: 'certs', secret: { secretName: 'tls-certs' } }
+```
+
+---
+
+## VcsProvider
+
+`VcsProvider` is a pluggable interface for generating Tekton trigger resources. The default is `GitHubVcsProvider`. Override via `TektonProject.providers` to add support for GitLab, Gitea, or other VCS hosts without modifying the library.
+
+```typescript
+import { GitHubVcsProvider } from '@pfenerty/tektonic';
+
+// Default (GitHub) — explicit form:
+new TektonProject({
+  providers: [new GitHubVcsProvider()],
+  // ... rest of options
+});
+
+// Custom provider — implement VcsProvider:
+class MyGitLabProvider implements VcsProvider {
+  readonly supportedEvents = [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST];
+
+  buildTrigger(scope, pipelineRef, event, ctx): VcsTriggerContribution {
+    // Create TriggerBinding + TriggerTemplate ApiObjects under `scope`
+    // Return the EventListener trigger entry
+    ...
+  }
+}
+
+new TektonProject({
+  providers: [new MyGitLabProvider()],
+  // ...
+});
+```
+
+`VcsProviderCtx` carries all project-level settings (namespace, namePrefix, webhookSecretRef, workspace storage, etc.) plus `allEvents` — the full list of configured events, used for cross-event CEL filtering (e.g. excluding tag pushes from the push trigger when a tag pipeline is also configured).
+
+---
+
 ## Real-World Example
 
 The following is the actual self-CI pipeline for this repository. It shows:

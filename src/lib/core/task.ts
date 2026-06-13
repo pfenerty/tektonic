@@ -143,6 +143,66 @@ export interface TaskCacheSpec {
     multiThreadCompression?: boolean;
 }
 
+/**
+ * Specification for a sidecar container that runs alongside a task's steps.
+ *
+ * Sidecars start before the steps begin and are terminated after all steps complete.
+ * Common uses: database containers for integration tests, docker-in-docker, local
+ * service stubs.
+ *
+ * Unlike steps, sidecars do not support `onError` and are not sequenced by Tekton.
+ */
+export interface TaskSidecarSpec {
+    /** Sidecar name (must be unique within the task). */
+    name: string;
+    /** Container image to run. */
+    image: string;
+    /** Entrypoint command override. */
+    command?: string[];
+    /** Arguments passed to the entrypoint. */
+    args?: string[];
+    /** Inline script executed by the sidecar (requires an image with a shell). */
+    script?: string;
+    /** Working directory for the sidecar container. */
+    workingDir?: string;
+    /** Environment variables injected into the sidecar container. */
+    env?: {
+        name: string;
+        value?: string;
+        valueFrom?: { secretKeyRef: { name: string; key: string } };
+    }[];
+    /** CPU/memory requests and limits for this sidecar. */
+    computeResources?: {
+        requests?: { cpu?: string; memory?: string; "ephemeral-storage"?: string };
+        limits?: { cpu?: string; memory?: string; "ephemeral-storage"?: string };
+    };
+    /** Per-container security context override. */
+    securityContext?: Record<string, unknown>;
+    /**
+     * Probe used by Tekton to determine when the sidecar is ready to serve traffic.
+     * Follows the Kubernetes `v1.Probe` schema.
+     */
+    readinessProbe?: Record<string, unknown>;
+}
+
+/**
+ * A Kubernetes volume available for mounting in task steps or sidecars.
+ *
+ * Follows the Kubernetes `v1.Volume` schema — `name` is required; all other
+ * fields are passed through as-is. Common volume types: `emptyDir`, `configMap`,
+ * `secret`, `persistentVolumeClaim`.
+ *
+ * @example
+ * ```ts
+ * // Shared tmpfs between a step and a sidecar
+ * { name: 'shared', emptyDir: { medium: 'Memory' } }
+ * ```
+ */
+export interface TaskVolumeSpec {
+    name: string;
+    [key: string]: unknown;
+}
+
 /** Minimum contract shared by all task-like nodes in a pipeline. */
 export interface TaskLike {
     readonly name: string;
@@ -183,6 +243,17 @@ export interface TaskOptions {
     caches?: TaskCacheSpec[];
     /** Results this task produces. Each result is bound to the task name at construction time. */
     results?: Result[];
+    /**
+     * Sidecar containers that run alongside this task's steps for the duration of the task pod.
+     * Start before steps begin; terminated after all steps complete.
+     */
+    sidecars?: TaskSidecarSpec[];
+    /**
+     * Additional Kubernetes volumes made available for mounting in steps and sidecars.
+     * Volumes declared here supplement (not replace) workspace-backed volumes.
+     * Follows the Kubernetes `v1.Volume` schema — `name` is required.
+     */
+    volumes?: TaskVolumeSpec[];
 }
 
 /**
@@ -213,6 +284,10 @@ export class TaskDef implements TaskLike {
     readonly caches: TaskCacheSpec[];
     /** Results this task produces, bound to this task's name at construction time. */
     readonly results: Result[];
+    /** Sidecar containers that run alongside steps for the task pod's lifetime. */
+    readonly sidecars: TaskSidecarSpec[];
+    /** Additional Kubernetes volumes available for mounting in steps and sidecars. */
+    readonly volumes: TaskVolumeSpec[];
 
     constructor(opts: TaskOptions) {
         this.name = opts.name;
@@ -241,6 +316,8 @@ export class TaskDef implements TaskLike {
         }
         this.results = opts.results ?? [];
         for (const r of this.results) r._bindToTask(this.name);
+        this.sidecars = opts.sidecars ?? [];
+        this.volumes = opts.volumes ?? [];
     }
 
     /**
@@ -305,6 +382,12 @@ export class TaskDef implements TaskLike {
                     results: this.results.map((r) => r.toSpec()),
                 }),
                 steps,
+                ...(this.sidecars.length > 0 && {
+                    sidecars: this.sidecars,
+                }),
+                ...(this.volumes.length > 0 && {
+                    volumes: this.volumes,
+                }),
             },
         });
     }

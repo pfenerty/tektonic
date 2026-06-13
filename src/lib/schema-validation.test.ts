@@ -157,6 +157,41 @@ describe('Tekton v1 schema conformance — Task', () => {
       assertNoUnknownFields(step, 'v1.Step', 'spec.steps[]');
     }
   });
+
+  it('TaskSpec with sidecars conforms to v1.TaskSpec and v1.Sidecar schema', () => {
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    new Task({
+      name: 'with-sidecar',
+      steps: [{ name: 'run', image: 'alpine' }],
+      sidecars: [{
+        name: 'postgres',
+        image: 'postgres:16-alpine',
+        env: [{ name: 'POSTGRES_PASSWORD', value: 'test' }],
+        computeResources: { requests: { memory: '256Mi' } },
+      }],
+    }).synth(chart, 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    assertNoUnknownFields(manifest.spec as AnyObj, 'v1.TaskSpec', 'spec');
+    for (const sidecar of manifest.spec.sidecars as AnyObj[]) {
+      assertNoUnknownFields(sidecar, 'v1.Sidecar', 'spec.sidecars[]');
+    }
+  });
+
+  it('TaskSpec with volumes conforms to v1.TaskSpec schema', () => {
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    new Task({
+      name: 'with-volume',
+      steps: [{ name: 'run', image: 'alpine' }],
+      volumes: [{ name: 'shared', emptyDir: {} }],
+    }).synth(chart, 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    assertNoUnknownFields(manifest.spec as AnyObj, 'v1.TaskSpec', 'spec');
+    expect(manifest.spec.volumes).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -227,6 +262,19 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
     const gatedBuild = gated(build, {
       when: [{ input: '$(params.type)', operator: 'in', values: ['push'] }],
     });
+    const pipeline = new Pipeline({ name: 'ci', tasks: [gatedBuild] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline._build(chart, 'pipeline', 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    for (const task of manifest.spec.tasks as AnyObj[]) {
+      assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
+    }
+  });
+
+  it('pipeline task with retries and timeout conforms to v1.PipelineTask schema', () => {
+    const gatedBuild = gated(build, { retries: 2, timeout: '30m' });
     const pipeline = new Pipeline({ name: 'ci', tasks: [gatedBuild] });
     const app = new App();
     const chart = new Chart(app, 'test');

@@ -14,6 +14,16 @@ export interface WhenExpression {
 export interface PipelineTaskOverrides {
   /** Conditional expressions — the task only runs if all expressions evaluate to true. */
   when?: WhenExpression[];
+  /**
+   * Number of times to retry the TaskRun on failure. Corresponds to `v1.PipelineTask.retries`.
+   * Useful for flaky tasks (e.g. network-dependent steps) that should be retried automatically.
+   */
+  retries?: number;
+  /**
+   * Maximum duration before this task's TaskRun times out. Uses Go duration syntax
+   * (e.g. `"10m"`, `"1h30m"`). Corresponds to `v1.PipelineTask.timeout`.
+   */
+  timeout?: string;
 }
 
 /** A {@link TaskLike} node that carries per-pipeline-edge overrides applied at synthesis time. */
@@ -31,7 +41,15 @@ export interface PipelineTaskNode extends TaskLike {
  * @example
  * ```ts
  * const pipeline = new Pipeline({
- *   tasks: [clone, gated(build, { when: [{ input: '$(params.type)', operator: 'in', values: ['push'] }] })],
+ *   tasks: [
+ *     clone,
+ *     // Only runs on push; retried up to 2 times; times out after 20 minutes.
+ *     gated(build, {
+ *       when: [{ input: '$(params.type)', operator: 'in', values: ['push'] }],
+ *       retries: 2,
+ *       timeout: '20m',
+ *     }),
+ *   ],
  * });
  * ```
  */
@@ -43,6 +61,8 @@ export function gated(task: TaskLike, overrides: PipelineTaskOverrides): Pipelin
         return (runAfter: string[], prefix?: string) => {
           const base = target._toPipelineTaskSpec(runAfter, prefix);
           if (overrides.when?.length) base.when = overrides.when;
+          if (overrides.retries !== undefined) base.retries = overrides.retries;
+          if (overrides.timeout !== undefined) base.timeout = overrides.timeout;
           return base;
         };
       }

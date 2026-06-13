@@ -1125,6 +1125,66 @@ describe('Task', () => {
     });
   });
 
+  describe('sidecars', () => {
+    it('emits sidecars in the synthesized Task spec', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      new Task({
+        name: 'with-sidecar',
+        steps: [{ name: 'run', image: 'alpine' }],
+        sidecars: [{
+          name: 'postgres',
+          image: 'postgres:16-alpine',
+          env: [{ name: 'POSTGRES_PASSWORD', value: 'test' }],
+        }],
+      }).synth(chart, 'ns');
+      const manifest = chart.toJson()[0] as any;
+
+      expect(manifest.spec.sidecars).toHaveLength(1);
+      expect(manifest.spec.sidecars[0].name).toBe('postgres');
+      expect(manifest.spec.sidecars[0].image).toBe('postgres:16-alpine');
+      expect(manifest.spec.sidecars[0].env).toEqual([{ name: 'POSTGRES_PASSWORD', value: 'test' }]);
+    });
+
+    it('omits sidecars from spec when none declared', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns');
+      const manifest = chart.toJson()[0] as any;
+
+      expect(manifest.spec.sidecars).toBeUndefined();
+    });
+  });
+
+  describe('volumes', () => {
+    it('emits volumes in the synthesized Task spec', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      new Task({
+        name: 'with-volume',
+        steps: [{ name: 'run', image: 'alpine' }],
+        volumes: [
+          { name: 'shared', emptyDir: {} },
+          { name: 'config', configMap: { name: 'my-config' } },
+        ],
+      }).synth(chart, 'ns');
+      const manifest = chart.toJson()[0] as any;
+
+      expect(manifest.spec.volumes).toHaveLength(2);
+      expect(manifest.spec.volumes[0]).toEqual({ name: 'shared', emptyDir: {} });
+      expect(manifest.spec.volumes[1]).toEqual({ name: 'config', configMap: { name: 'my-config' } });
+    });
+
+    it('omits volumes from spec when none declared', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns');
+      const manifest = chart.toJson()[0] as any;
+
+      expect(manifest.spec.volumes).toBeUndefined();
+    });
+  });
+
   describe('_toPipelineTaskSpec()', () => {
     it('generates correct spec with taskRef, params, workspaces, runAfter', () => {
       const t = new Task({
