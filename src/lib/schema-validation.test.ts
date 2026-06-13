@@ -18,6 +18,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { App, Chart } from 'cdk8s';
 import { Task } from './core/task';
 import { Pipeline } from './core/pipeline';
+import { HubTaskRef } from './core/hub-task-ref';
 import { Param } from './core/param';
 import { Workspace } from './core/workspace';
 
@@ -167,6 +168,30 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
   });
 
   it('pipeline task entries conform to v1.PipelineTask schema', () => {
+    const pipeline = new Pipeline({ name: 'ci', tasks: [build] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline._build(chart, 'pipeline', 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    for (const task of manifest.spec.tasks as AnyObj[]) {
+      assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
+    }
+  });
+
+  it('pipeline task with resolver-based taskRef conforms to v1.PipelineTask schema', () => {
+    const hubClone = new HubTaskRef({
+      taskName: 'git-clone',
+      version: '0.9',
+      params: [urlParam, revParam],
+      workspaces: [ws],
+    });
+    const build = new Task({
+      name: 'build',
+      workspaces: [ws],
+      needs: [hubClone],
+      steps: [{ name: 'build', image: 'node:22' }],
+    });
     const pipeline = new Pipeline({ name: 'ci', tasks: [build] });
     const app = new App();
     const chart = new Chart(app, 'test');
