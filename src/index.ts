@@ -24,6 +24,8 @@ export type {
     TektonProjectOptions,
     CacheSpec,
 } from "./lib/core/tekton-project";
+export { PACProject } from "./lib/core/pac-project";
+export type { PACProjectOptions } from "./lib/core/pac-project";
 export { TRIGGER_EVENTS } from "./lib/core/trigger-events";
 export type { StatusReporter } from "./lib/core/status-reporter";
 

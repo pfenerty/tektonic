@@ -21,6 +21,13 @@ export interface PipelineOptions {
   finallyTasks?: TaskLike[];
   /** Additional pipeline-level params not tied to any specific task. */
   params?: Param[];
+  /**
+   * Target branch filter used by {@link PACProject} for the
+   * `pipelinesascode.tekton.dev/on-target-branch` annotation.
+   * Accepts a glob pattern. Defaults to `"*"` (all branches).
+   * Ignored for `TRIGGER_EVENTS.TAG` pipelines, which always target `"refs/tags/*"`.
+   */
+  onTargetBranch?: string;
 }
 
 /**
@@ -40,6 +47,11 @@ export class Pipeline {
   readonly allTasks: TaskLike[];
   /** Tasks that run unconditionally after all regular tasks complete or fail. */
   readonly finallyTasks: TaskLike[];
+  /**
+   * Target branch filter for PAC's `on-target-branch` annotation.
+   * Defaults to `"*"`. Ignored for TAG pipelines, which always use `"refs/tags/*"`.
+   */
+  readonly onTargetBranch: string;
   private readonly extraParams: Param[];
   /** @internal Auto-generated task that sets all status contexts to pending at pipeline start. */
   protected readonly _pendingTask?: TaskDef;
@@ -57,6 +69,7 @@ export class Pipeline {
     this.triggers = opts.triggers ?? [];
     this.tasks = opts.tasks;
     this.finallyTasks = opts.finallyTasks ?? [];
+    this.onTargetBranch = opts.onTargetBranch ?? '*';
     this.extraParams = opts.params ?? [];
 
     const regularTasks = this.discoverAllTasks(opts.tasks);
@@ -118,6 +131,31 @@ export class Pipeline {
     return [...seen.values()].map(w => w.toSpec());
   }
 
+  /**
+   * @internal Returns the Pipeline spec as a plain object.
+   * Used by {@link TektonProject} via `_build()` and by {@link PACProject} to inline
+   * the spec into a PAC PipelineRun template.
+   */
+  _buildSpec(
+    extraParams?: Record<string, unknown>[],
+    namePrefix?: string,
+  ): Record<string, unknown> {
+    this.validate();
+    const sorted = this.topoSort();
+    return {
+      params: this.deduplicateParams([...(extraParams ?? []), ...this.inferParams()]),
+      workspaces: this.inferWorkspaces(),
+      tasks: sorted.map(task =>
+        task._toPipelineTaskSpec(this.runAfterFor(task), namePrefix),
+      ),
+      ...(this.finallyTasks.length > 0 && {
+        finally: this.finallyTasks.map(task =>
+          task._toPipelineTaskSpec([], namePrefix),
+        ),
+      }),
+    };
+  }
+
   /** @internal Synthesizes the Pipeline resource. Called by {@link TektonProject}. */
   _build(
     scope: Construct,
@@ -126,9 +164,6 @@ export class Pipeline {
     extraParams?: Record<string, unknown>[],
     namePrefix?: string,
   ): void {
-    this.validate();
-    const sorted = this.topoSort();
-
     new ApiObject(scope, id, {
       apiVersion: TEKTON_API_V1,
       kind: 'Pipeline',
@@ -136,18 +171,7 @@ export class Pipeline {
         name: namePrefix ? `${namePrefix}-${this.name}` : this.name,
         namespace,
       },
-      spec: {
-        params: this.deduplicateParams([...(extraParams ?? []), ...this.inferParams()]),
-        workspaces: this.inferWorkspaces(),
-        tasks: sorted.map(task =>
-          task._toPipelineTaskSpec(this.runAfterFor(task), namePrefix),
-        ),
-        ...(this.finallyTasks.length > 0 && {
-          finally: this.finallyTasks.map(task =>
-            task._toPipelineTaskSpec([], namePrefix),
-          ),
-        }),
-      },
+      spec: this._buildSpec(extraParams, namePrefix),
     });
   }
 
