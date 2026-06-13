@@ -1,0 +1,89 @@
+import { Construct } from 'constructs';
+import { TRIGGER_EVENTS } from '../core/trigger-events';
+
+/**
+ * The Tekton Trigger resources a {@link VcsProvider} contributes for one pipeline event.
+ * The `eventListenerEntry` is a complete trigger entry (bindings + interceptors + template)
+ * ready to include in the EventListener spec.
+ */
+export interface VcsTriggerContribution {
+  /** TriggerBinding resource name. */
+  bindingRef: string;
+  /** TriggerTemplate resource name. */
+  templateRef: string;
+  /** Complete trigger entry for the EventListener spec. */
+  eventListenerEntry: Record<string, unknown>;
+}
+
+/**
+ * Infrastructure-level context passed to {@link VcsProvider#buildTrigger}.
+ * Contains the project-wide settings that every provider needs to construct
+ * TriggerBinding, TriggerTemplate, and EventListener entries.
+ */
+export interface VcsProviderCtx {
+  /** Kubernetes namespace for generated trigger resources. */
+  namespace: string;
+  /** Optional prefix prepended to all resource names. */
+  namePrefix?: string;
+  /** Kubernetes Secret reference for webhook validation. */
+  webhookSecretRef?: { secretName: string; secretKey: string };
+  /** Pipeline param name for the repository URL. Defaults to `"url"`. */
+  urlParam?: string;
+  /** Pipeline param name for the git revision. Defaults to `"revision"`. */
+  revisionParam?: string;
+  /** Pipeline param name that receives the git ref. */
+  gitRefParam?: string;
+  /** PVC size for the ephemeral pipeline workspace. */
+  workspaceStorageSize?: string;
+  /** StorageClass for the ephemeral workspace PVC. */
+  workspaceStorageClass?: string;
+  /** Access modes for the ephemeral workspace PVC. */
+  workspaceAccessModes?: string[];
+  /** Persistent cache workspace bindings added to every PipelineRun. */
+  cacheWorkspaces?: { workspaceName: string; claimName: string }[];
+  /** Pod-level security context merged on top of defaults for every PipelineRun pod. */
+  defaultPodSecurityContext?: Record<string, unknown>;
+  /**
+   * All events being configured in this project invocation.
+   * Providers may use this to apply cross-event filters — for example, GitHub's push
+   * trigger adds a CEL interceptor to exclude tag pushes when a tag event is also present.
+   */
+  allEvents: TRIGGER_EVENTS[];
+}
+
+/**
+ * Pluggable VCS trigger provider.
+ *
+ * Implement this interface to add support for a new VCS host (GitLab, Gitea, etc.)
+ * without modifying `TektonInfraChart`. The provider creates the Tekton trigger
+ * resources (TriggerBinding, TriggerTemplate) and returns the corresponding
+ * EventListener trigger entry.
+ *
+ * @example
+ * ```ts
+ * new TektonProject({
+ *   providers: [new MyCustomVcsProvider()],
+ *   ...
+ * });
+ * ```
+ */
+export interface VcsProvider {
+  /** Events this provider can handle. Used to match providers to pipeline trigger types. */
+  readonly supportedEvents: TRIGGER_EVENTS[];
+
+  /**
+   * Creates the Tekton trigger resources for one pipeline event and returns
+   * the EventListener trigger entry to include in the spec.
+   *
+   * @param scope - The CDK8s construct scope (typically the TektonInfraChart).
+   * @param pipelineRef - Name of the Pipeline resource this trigger starts.
+   * @param event - The specific event type to build a trigger for.
+   * @param ctx - Project-wide infrastructure settings.
+   */
+  buildTrigger(
+    scope: Construct,
+    pipelineRef: string,
+    event: TRIGGER_EVENTS,
+    ctx: VcsProviderCtx,
+  ): VcsTriggerContribution;
+}

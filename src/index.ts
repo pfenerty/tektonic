@@ -32,6 +32,8 @@ export { GitHubStatusReporter } from "./lib/reporters/github-status-reporter";
 export type { GitHubStatusReporterOptions } from "./lib/reporters/github-status-reporter";
 
 // Triggers
+export { GitHubVcsProvider } from "./lib/triggers/github-vcs-provider";
+export type { VcsProvider, VcsProviderCtx, VcsTriggerContribution } from "./lib/triggers/vcs-provider";
 export { GitHubTriggerBase } from "./lib/triggers/github-trigger-base";
 export type {
     GitHubTriggerBaseProps,

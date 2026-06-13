@@ -5,6 +5,7 @@ import { TaskLike, TaskDef } from './task';
 import { Workspace } from './workspace';
 import { TRIGGER_EVENTS } from './trigger-events';
 import type { CacheBackend } from './cache-backend';
+import type { VcsProvider } from '../triggers/vcs-provider';
 
 /**
  * Specifies a persistent cache volume to provision and bind for a pipeline workspace.
@@ -81,6 +82,12 @@ export interface TektonProjectOptions {
    * ```
    */
   serviceAccountAnnotations?: Record<string, string>;
+  /**
+   * VCS provider implementations used to build trigger resources.
+   * Defaults to `[new GitHubVcsProvider()]`.
+   * Override to add support for other VCS hosts (GitLab, Gitea, etc.).
+   */
+  providers?: VcsProvider[];
 }
 
 /**
@@ -157,6 +164,7 @@ export class TektonProject {
         workspaceAccessModes: opts.workspaceAccessModes,
         defaultPodSecurityContext: opts.defaultPodSecurityContext,
         serviceAccountAnnotations: opts.serviceAccountAnnotations,
+        providers: opts.providers,
         // Only PVC-backed caches need PVCs and workspace bindings in the infra chart.
         // GCS caches store archives remotely and don't use PVCs.
         caches: (opts.caches ?? [])

@@ -1,8 +1,8 @@
 import { Construct } from "constructs";
 import { ApiObject, Chart, ChartProps } from "cdk8s";
-import { GitHubPushTrigger } from "../lib/triggers/github-push.trigger";
-import { GitHubPullRequestTrigger } from "../lib/triggers/github-pull-request.trigger";
-import { GitHubTagTrigger } from "../lib/triggers/github-tag.trigger";
+import { GitHubVcsProvider } from "../lib/triggers/github-vcs-provider";
+import type { VcsProvider, VcsProviderCtx } from "../lib/triggers/vcs-provider";
+import { TRIGGER_EVENTS } from "../lib/core/trigger-events";
 
 /** Properties for the {@link TektonInfraChart}. */
 export interface TektonInfraChartProps extends ChartProps {
@@ -44,6 +44,11 @@ export interface TektonInfraChartProps extends ChartProps {
     defaultPodSecurityContext?: Record<string, unknown>;
     /** Additional annotations to apply to the generated ServiceAccount. */
     serviceAccountAnnotations?: Record<string, string>;
+    /**
+     * VCS provider implementations used to build trigger resources.
+     * Defaults to `[new GitHubVcsProvider()]`.
+     */
+    providers?: VcsProvider[];
 }
 
 /**
@@ -126,9 +131,20 @@ export class TektonInfraChart extends Chart {
             claimName: c.claimName,
         }));
 
-        const triggerProps = {
+        // Ordered list of (pipelineRef, event) pairs — push and PR are always
+        // present (matching existing behavior); tag is conditional.
+        const triggerEntries: { pipelineRef: string; event: TRIGGER_EVENTS }[] = [
+            { pipelineRef: props.pushPipelineRef ?? "push-pipeline", event: TRIGGER_EVENTS.PUSH },
+            { pipelineRef: props.pullRequestPipelineRef ?? "pull-request-pipeline", event: TRIGGER_EVENTS.PULL_REQUEST },
+            ...(props.tagPipelineRef
+                ? [{ pipelineRef: props.tagPipelineRef, event: TRIGGER_EVENTS.TAG }]
+                : []),
+        ];
+
+        const ctx: VcsProviderCtx = {
             namespace,
             namePrefix: props.namePrefix,
+            webhookSecretRef: props.webhookSecretRef,
             urlParam: props.urlParam,
             revisionParam: props.revisionParam,
             gitRefParam: props.gitRefParam,
@@ -137,129 +153,25 @@ export class TektonInfraChart extends Chart {
             workspaceAccessModes: props.workspaceAccessModes,
             cacheWorkspaces,
             defaultPodSecurityContext: props.defaultPodSecurityContext,
+            allEvents: triggerEntries.map((e) => e.event),
         };
 
-        const pushTrigger = new GitHubPushTrigger(this, "github-push-trigger", {
-            ...triggerProps,
-            pipelineRef: props.pushPipelineRef ?? "push-pipeline",
-        });
-
-        const prTrigger = new GitHubPullRequestTrigger(
-            this,
-            "github-pr-trigger",
-            {
-                ...triggerProps,
-                pipelineRef:
-                    props.pullRequestPipelineRef ?? "pull-request-pipeline",
-            },
-        );
+        const providers = props.providers ?? [new GitHubVcsProvider()];
 
         // ── EventListener ─────────────────────────────────────────────────────────
 
-        const triggers: Record<string, unknown>[] = [
-            {
-                bindings: [
-                    { kind: "TriggerBinding", ref: pushTrigger.bindingRef },
-                ],
-                interceptors: [
-                    {
-                        ref: { kind: "ClusterInterceptor", name: "github" },
-                        params: [
-                            { name: "eventTypes", value: ["push"] },
-                            ...(props.webhookSecretRef
-                                ? [
-                                      {
-                                          name: "secretRef",
-                                          value: props.webhookSecretRef,
-                                      },
-                                  ]
-                                : []),
-                        ],
-                    },
-                    ...(props.tagPipelineRef
-                        ? [
-                              {
-                                  ref: {
-                                      kind: "ClusterInterceptor",
-                                      name: "cel",
-                                  },
-                                  params: [
-                                      {
-                                          name: "filter",
-                                          value: "!body.ref.startsWith('refs/tags/')",
-                                      },
-                                  ],
-                              },
-                          ]
-                        : []),
-                ],
-                template: { ref: pushTrigger.templateRef },
-            },
-            {
-                bindings: [
-                    { kind: "TriggerBinding", ref: prTrigger.bindingRef },
-                ],
-                interceptors: [
-                    {
-                        ref: { kind: "ClusterInterceptor", name: "github" },
-                        params: [
-                            { name: "eventTypes", value: ["pull_request"] },
-                            ...(props.webhookSecretRef
-                                ? [
-                                      {
-                                          name: "secretRef",
-                                          value: props.webhookSecretRef,
-                                      },
-                                  ]
-                                : []),
-                        ],
-                    },
-                ],
-                template: { ref: prTrigger.templateRef },
-            },
-        ];
-
-        if (props.tagPipelineRef) {
-            const tagTrigger = new GitHubTagTrigger(
-                this,
-                "github-tag-trigger",
-                {
-                    ...triggerProps,
-                    pipelineRef: props.tagPipelineRef,
-                },
+        const triggers: Record<string, unknown>[] = [];
+        for (const { pipelineRef, event } of triggerEntries) {
+            const provider = providers.find((p) =>
+                p.supportedEvents.includes(event),
             );
-
-            triggers.push({
-                bindings: [
-                    { kind: "TriggerBinding", ref: tagTrigger.bindingRef },
-                ],
-                interceptors: [
-                    {
-                        ref: { kind: "ClusterInterceptor", name: "github" },
-                        params: [
-                            { name: "eventTypes", value: ["push"] },
-                            ...(props.webhookSecretRef
-                                ? [
-                                      {
-                                          name: "secretRef",
-                                          value: props.webhookSecretRef,
-                                      },
-                                  ]
-                                : []),
-                        ],
-                    },
-                    {
-                        ref: { kind: "ClusterInterceptor", name: "cel" },
-                        params: [
-                            {
-                                name: "filter",
-                                value: "body.ref.startsWith('refs/tags/')",
-                            },
-                        ],
-                    },
-                ],
-                template: { ref: tagTrigger.templateRef },
-            });
+            if (!provider) {
+                throw new Error(
+                    `TektonInfraChart: no VcsProvider found for event "${event}"`,
+                );
+            }
+            const contribution = provider.buildTrigger(this, pipelineRef, event, ctx);
+            triggers.push(contribution.eventListenerEntry);
         }
 
         new ApiObject(this, "event-listener", {
