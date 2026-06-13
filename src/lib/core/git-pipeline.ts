@@ -1,6 +1,6 @@
 import { Param } from "./param";
 import { Workspace } from "./workspace";
-import { Task } from "./task";
+import { Task, TaskLike } from "./task";
 import { Pipeline, PipelineOptions } from "./pipeline";
 import { DEFAULT_BASE_IMAGE } from "../constants";
 
@@ -110,9 +110,11 @@ let timestamp = (git log -1 --format=%aI | str trim)
 
         // Discover all user tasks transitively and inject the shared workspace and default
         // workingDir. Both mutations are idempotent and safe when the same task instance
-        // appears in multiple GitPipelines.
+        // appears in multiple GitPipelines. Non-synthesizable TaskLikes declare their own
+        // workspaces and must not be mutated here.
         const allUserTasks = GitPipeline._discoverUserTasks(opts.tasks);
         for (const task of allUserTasks) {
+            if (!task.synthesizable) continue;
             if (!task.workspaces.some((w) => w.name === workspace.name)) {
                 (task.workspaces as Workspace[]).push(workspace);
             }
@@ -121,7 +123,7 @@ let timestamp = (git log -1 --format=%aI | str trim)
             if (!(task as any).stepTemplate?.workingDir) {
                 (task as any).stepTemplate = {
                     workingDir: workspace.path,
-                    ...(task.stepTemplate ?? {}),
+                    ...(task as any).stepTemplate,
                 };
             }
         }
@@ -139,7 +141,7 @@ let timestamp = (git log -1 --format=%aI | str trim)
      * ordering constraints (i.e. root tasks). This runs at pipeline-spec time and
      * does not mutate any task's `needs` array.
      */
-    protected override runAfterFor(task: Task): string[] {
+    protected override runAfterFor(task: TaskLike): string[] {
         const names = super.runAfterFor(task);
         if (names.length === 0 && task !== this.cloneTask) {
             return [this.cloneTask.name];
@@ -147,9 +149,9 @@ let timestamp = (git log -1 --format=%aI | str trim)
         return names;
     }
 
-    private static _discoverUserTasks(tasks: Task[]): Task[] {
-        const seen = new Set<Task>();
-        const visit = (t: Task): void => {
+    private static _discoverUserTasks(tasks: TaskLike[]): TaskLike[] {
+        const seen = new Set<TaskLike>();
+        const visit = (t: TaskLike): void => {
             if (seen.has(t)) return;
             seen.add(t);
             for (const dep of t.needs) visit(dep);

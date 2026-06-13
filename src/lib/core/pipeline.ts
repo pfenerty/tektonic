@@ -3,7 +3,7 @@ import { ApiObject } from 'cdk8s';
 import { TEKTON_API_V1 } from '../constants';
 import { Param } from './param';
 import { Workspace } from './workspace';
-import { Task } from './task';
+import { Task, TaskLike, TaskDef } from './task';
 import { TRIGGER_EVENTS } from './trigger-events';
 
 /** Options for constructing a {@link Pipeline}. */
@@ -16,9 +16,9 @@ export interface PipelineOptions {
   /** Trigger events that should start this pipeline (used by {@link TektonProject} to wire webhooks). */
   triggers?: TRIGGER_EVENTS[];
   /** Top-level tasks. Transitive dependencies are auto-discovered via `task.needs`. */
-  tasks: Task[];
+  tasks: TaskLike[];
   /** Tasks that run unconditionally after all regular tasks complete or fail. */
-  finallyTasks?: Task[];
+  finallyTasks?: TaskLike[];
   /** Additional pipeline-level params not tied to any specific task. */
   params?: Param[];
 }
@@ -35,15 +35,14 @@ export class Pipeline {
   /** Trigger events associated with this pipeline. */
   readonly triggers: TRIGGER_EVENTS[];
   /** Top-level tasks provided at construction. */
-  readonly tasks: Task[];
+  readonly tasks: TaskLike[];
   /** All tasks including transitive dependencies discovered via `task.needs`. */
-  readonly allTasks: Task[];
+  readonly allTasks: TaskLike[];
   /** Tasks that run unconditionally after all regular tasks complete or fail. */
-  readonly finallyTasks: Task[];
+  readonly finallyTasks: TaskLike[];
   private readonly extraParams: Param[];
-  /** Auto-generated task that sets all status contexts to pending at pipeline start. */
   /** @internal Auto-generated task that sets all status contexts to pending at pipeline start. */
-  protected readonly _pendingTask?: Task;
+  protected readonly _pendingTask?: TaskDef;
 
   private static _counter = 0;
 
@@ -61,7 +60,9 @@ export class Pipeline {
     this.extraParams = opts.params ?? [];
 
     const regularTasks = this.discoverAllTasks(opts.tasks);
-    const statusTasks = regularTasks.filter(t => t.statusContext && t.statusReporter);
+    const statusTasks = regularTasks.filter(
+      (t): t is TaskDef => t instanceof TaskDef && !!t.statusContext && !!t.statusReporter,
+    );
 
     if (statusTasks.length > 0) {
       const reporter = statusTasks[0].statusReporter!;
@@ -72,17 +73,18 @@ export class Pipeline {
       this.allTasks = regularTasks;
     }
 
-    // Collect cache-save finally tasks from all regular tasks and merge them
-    // into finallyTasks so they run in their own pods after build pods terminate.
-    const cacheFinallyTasks = regularTasks.flatMap(t => t.getCacheFinallyTasks());
+    // Collect cache-save finally tasks from TaskDef nodes only.
+    const cacheFinallyTasks = regularTasks
+      .filter((t): t is TaskDef => t instanceof TaskDef)
+      .flatMap(t => t.getCacheFinallyTasks());
     if (cacheFinallyTasks.length > 0) {
-      (this.finallyTasks as Task[]).push(...cacheFinallyTasks);
+      (this.finallyTasks as TaskLike[]).push(...cacheFinallyTasks);
     }
   }
 
-  protected discoverAllTasks(tasks: Task[]): Task[] {
-    const seen = new Set<Task>();
-    const visit = (t: Task) => {
+  protected discoverAllTasks(tasks: TaskLike[]): TaskLike[] {
+    const seen = new Set<TaskLike>();
+    const visit = (t: TaskLike) => {
       if (seen.has(t)) return;
       seen.add(t);
       for (const dep of t.needs) visit(dep);
@@ -153,11 +155,11 @@ export class Pipeline {
    * Returns the `runAfter` task names for a given task within this pipeline.
    * Override in subclasses to inject additional ordering constraints.
    */
-  protected runAfterFor(task: Task): string[] {
+  protected runAfterFor(task: TaskLike): string[] {
     let names = task.needs
       .filter(dep => this.allTasks.includes(dep))
       .map(dep => dep.name);
-    if (this._pendingTask && task.statusContext && task.statusReporter && task !== this._pendingTask) {
+    if (this._pendingTask && task instanceof TaskDef && task.statusContext && task.statusReporter && task !== this._pendingTask) {
       names = [...names, this._pendingTask.name];
     }
     return names;
@@ -195,12 +197,12 @@ export class Pipeline {
     }
   }
 
-  private topoSort(): Task[] {
-    const visited = new Set<Task>();
-    const visiting = new Set<Task>();
-    const result: Task[] = [];
+  private topoSort(): TaskLike[] {
+    const visited = new Set<TaskLike>();
+    const visiting = new Set<TaskLike>();
+    const result: TaskLike[] = [];
 
-    const visit = (task: Task): void => {
+    const visit = (task: TaskLike): void => {
       if (visited.has(task)) return;
       if (visiting.has(task)) {
         throw new Error(

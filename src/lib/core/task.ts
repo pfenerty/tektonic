@@ -146,6 +146,10 @@ export interface TaskCacheSpec {
 export interface TaskLike {
     readonly name: string;
     readonly synthesizable: boolean;
+    readonly needs: TaskLike[];
+    readonly params: Param[];
+    readonly workspaces: Workspace[];
+    _toPipelineTaskSpec(runAfterNames: string[], namePrefix?: string): Record<string, unknown>;
 }
 
 /** Options for constructing a {@link TaskDef}. */

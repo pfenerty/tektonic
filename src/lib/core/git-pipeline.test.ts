@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { App, Chart } from 'cdk8s';
 import { GitPipeline } from './git-pipeline';
-import { Task } from './task';
+import { Task, TaskLike } from './task';
 import { Param } from './param';
 import { Workspace } from './workspace';
 import { TRIGGER_EVENTS } from './trigger-events';
@@ -155,6 +155,23 @@ describe('GitPipeline', () => {
     });
     new GitPipeline({ name: 'ci', workspace: ws, tasks: [test] });
     expect((test as any).stepTemplate.workingDir).toBe('/custom/path');
+  });
+
+  it('does not throw or mutate a non-synthesizable TaskLike', () => {
+    const stub: TaskLike = {
+      name: 'hub-task',
+      synthesizable: false,
+      needs: [],
+      params: [],
+      workspaces: [],
+      _toPipelineTaskSpec: (runAfter, prefix) => ({
+        name: 'hub-task',
+        taskRef: { kind: 'Task', name: prefix ? `${prefix}-hub-task` : 'hub-task' },
+        ...(runAfter.length > 0 ? { runAfter } : {}),
+      }),
+    };
+    expect(() => new GitPipeline({ name: 'ci', tasks: [stub] })).not.toThrow();
+    expect(stub.workspaces).toHaveLength(0);
   });
 
   it('tasks from multiple GitPipelines sharing the same instance are isolated in runAfter', () => {

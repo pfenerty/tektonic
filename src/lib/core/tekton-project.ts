@@ -1,7 +1,7 @@
 import { App, Chart } from 'cdk8s';
 import { TektonInfraChart } from '../../charts/tekton-infra.chart';
 import { Pipeline } from './pipeline';
-import { Task } from './task';
+import { TaskLike, TaskDef } from './task';
 import { Workspace } from './workspace';
 import { TRIGGER_EVENTS } from './trigger-events';
 import type { CacheBackend } from './cache-backend';
@@ -101,7 +101,7 @@ export class TektonProject {
     const namespace = opts.namespace;
 
     // 1. Collect unique Tasks across all pipelines (including finally tasks)
-    const uniqueTasks = new Map<string, Task>();
+    const uniqueTasks = new Map<string, TaskLike>();
     for (const pipeline of opts.pipelines) {
       for (const task of [...pipeline.allTasks, ...pipeline.finallyTasks]) {
         if (!uniqueTasks.has(task.name)) {
@@ -110,8 +110,9 @@ export class TektonProject {
       }
     }
 
-    // 2. Synth each unique Task
+    // 2. Synth each unique Task (non-synthesizable TaskLikes are skipped)
     for (const [name, task] of uniqueTasks) {
+      if (!(task instanceof TaskDef)) continue;
       const chart = new Chart(app, prefix ? `${prefix}-task-${name}` : `task-${name}`);
       task.synth(chart, namespace, prefix || undefined, opts.defaultStepSecurityContext);
     }
