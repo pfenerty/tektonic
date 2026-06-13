@@ -1,24 +1,41 @@
+import type { TaskCacheSpec, TaskStepSpec } from "./task";
+
 /**
- * Google Cloud Storage cache backend. Cache archives are stored in a GCS
- * bucket instead of a Kubernetes PVC. Authentication uses GKE Workload
- * Identity — the pod's Kubernetes Service Account must be annotated with
- * `iam.gke.io/gcp-service-account` pointing to a GCP SA that has
- * `roles/storage.objectAdmin` on the bucket.
+ * Context passed from {@link TaskDef} to each backend method.
+ * Carries the project-level image defaults so backends don't import constants directly.
  */
-export interface GcsCacheBackend {
-    type: "gcs";
-    /** GCS bucket name (e.g. `'my-project-ci-cache'`). */
-    bucket: string;
-    /**
-     * Optional key prefix within the bucket (e.g. `'tekton-cache/'`).
-     * Useful for sharing a bucket across multiple projects or pipelines.
-     * Defaults to `''`.
-     */
-    prefix?: string;
+export interface BackendCtx {
+    defaultBaseImage: string;
+    defaultGcsCacheImage: string;
 }
 
 /**
- * Discriminated union of cache backend types.
- * When omitted from a {@link TaskCacheSpec}, the default PVC-based backend is used.
+ * Strategy interface for cache backends.
+ *
+ * Implement this interface to create a custom cache backend:
+ *
+ * ```ts
+ * class S3Backend implements CacheBackend {
+ *   readonly type = 's3';
+ *   readonly needsPvcWorkspace = false;
+ *   restoreStep(spec, taskName, ctx) { ... }
+ *   saveStep(spec, taskName, ctx) { ... }
+ * }
+ * ```
+ *
+ * Pass an instance via `TaskCacheSpec.backend`. When omitted, {@link PvcBackend} is used.
  */
-export type CacheBackend = GcsCacheBackend;
+export interface CacheBackend {
+    /** Discriminator string (e.g. `'pvc'`, `'gcs'`). */
+    readonly type: string;
+    /**
+     * True when this backend stores cache archives on a PVC workspace.
+     * {@link TaskDef} uses this to auto-register the cache workspace on the task
+     * and to correctly wire finally-task workspaces.
+     */
+    readonly needsPvcWorkspace: boolean;
+    /** Returns the step that restores the cache at the start of the task. */
+    restoreStep(spec: TaskCacheSpec, taskName: string, ctx: BackendCtx): TaskStepSpec;
+    /** Returns the step that saves the cache at the end of the task (or in a finally pod). */
+    saveStep(spec: TaskCacheSpec, taskName: string, ctx: BackendCtx): TaskStepSpec;
+}

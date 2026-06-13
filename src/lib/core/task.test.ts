@@ -4,6 +4,7 @@ import { Task } from './task';
 import { Param } from './param';
 import { Workspace } from './workspace';
 import { Result } from './result';
+import { gcs } from '../cache/gcs-backend';
 import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES, DEFAULT_BASE_IMAGE, DEFAULT_GCS_CACHE_IMAGE } from '../constants';
 import { GitHubStatusReporter } from '../reporters/github-status-reporter';
 
@@ -726,7 +727,7 @@ describe('Task', () => {
       const t = new Task({
         name: 'c',
         steps: [{ name: 's', image: 'alpine' }],
-        caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], compress: true, backend: { type: 'gcs', bucket: 'my-bucket' } }],
+        caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], compress: true, backend: gcs({ bucket: 'my-bucket' }) }],
       });
       t.synth(chart, 'ns');
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
@@ -739,7 +740,7 @@ describe('Task', () => {
       const t = new Task({
         name: 'c',
         steps: [{ name: 's', image: 'alpine' }],
-        caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], compress: true, backend: { type: 'gcs', bucket: 'my-bucket' }, multiThreadCompression: false }],
+        caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], compress: true, backend: gcs({ bucket: 'my-bucket' }), multiThreadCompression: false }],
       });
       t.synth(chart, 'ns');
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
@@ -753,7 +754,7 @@ describe('Task', () => {
       key: ['package-lock.json'],
       paths: ['node_modules'],
       compress: true,
-      backend: { type: 'gcs' as const, bucket: 'my-ci-cache', prefix: 'tekton/' },
+      backend: gcs({ bucket: 'my-ci-cache', prefix: 'tekton/' }),
     };
 
     it('does not auto-add workspace for GCS cache', () => {
@@ -910,7 +911,7 @@ describe('Task', () => {
     it('GCS without prefix uses empty string', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
-      const noPrefix = { ...gcsCacheSpec, backend: { type: 'gcs' as const, bucket: 'my-bucket' } };
+      const noPrefix = { ...gcsCacheSpec, backend: gcs({ bucket: 'my-bucket' }) };
       const t = new Task({
         name: 'gcs-task',
         steps: [{ name: 's', image: 'alpine' }],
@@ -1023,7 +1024,7 @@ describe('Task', () => {
         key: ['api/go.sum'],
         paths: ['api/vendor'],
         compress: true,
-        backend: { type: 'gcs' as const, bucket: 'my-ci-cache' },
+        backend: gcs({ bucket: 'my-ci-cache' }),
         workingDir: '$(workspaces.workspace.path)',
       };
       const t = new Task({
@@ -1046,7 +1047,7 @@ describe('Task', () => {
         key: ['api/go.sum'],
         paths: ['api/vendor'],
         compress: true,
-        backend: { type: 'gcs' as const, bucket: 'my-ci-cache' },
+        backend: gcs({ bucket: 'my-ci-cache' }),
         workingDir: '$(workspaces.workspace.path)',
       };
       const t = new Task({
@@ -1068,7 +1069,7 @@ describe('Task', () => {
         key: ['api/go.sum'],
         paths: ['api/vendor'],
         compress: true,
-        backend: { type: 'gcs' as const, bucket: 'my-ci-cache' },
+        backend: gcs({ bucket: 'my-ci-cache' }),
         workingDir: '$(workspaces.workspace.path)',
       };
       const npmCache = {
@@ -1076,7 +1077,7 @@ describe('Task', () => {
         key: ['web/package-lock.json'],
         paths: ['web/node_modules'],
         compress: true,
-        backend: { type: 'gcs' as const, bucket: 'my-ci-cache' },
+        backend: gcs({ bucket: 'my-ci-cache' }),
         workingDir: '$(workspaces.workspace.path)',
       };
       const t = new Task({
