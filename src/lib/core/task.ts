@@ -224,7 +224,7 @@ export interface TaskOptions {
     /** Ordered list of steps the task executes. */
     steps: TaskStepSpec[];
     /** Tasks that must complete before this task runs (dependency graph edges). */
-    needs?: TaskDef[];
+    needs?: TaskLike[];
     /** Override or extend the default step template (merged with security context defaults). */
     stepTemplate?: Record<string, unknown>;
     /**
@@ -274,7 +274,7 @@ export class TaskDef implements TaskLike {
     readonly workspaces: Workspace[];
     readonly steps: TaskStepSpec[];
     /** Tasks that must complete before this task runs. */
-    readonly needs: TaskDef[];
+    readonly needs: TaskLike[];
     readonly stepTemplate?: Record<string, unknown>;
     /** Status context reported to the external system. */
     readonly statusContext?: string;

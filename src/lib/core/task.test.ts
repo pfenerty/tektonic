@@ -4,6 +4,7 @@ import { Task } from './task';
 import { Param } from './param';
 import { Workspace } from './workspace';
 import { Result } from './result';
+import { HubTaskRef } from './hub-task-ref';
 import { gcs } from '../cache/gcs-backend';
 import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES, DEFAULT_BASE_IMAGE, DEFAULT_GCS_CACHE_IMAGE } from '../constants';
 import { GitHubStatusReporter } from '../reporters/github-status-reporter';
@@ -33,6 +34,12 @@ describe('Task', () => {
     expect(t.needs).toEqual([]);
     expect(t.params).toEqual([]);
     expect(t.workspaces).toEqual([]);
+  });
+
+  it('accepts a HubTaskRef in needs', () => {
+    const hub = new HubTaskRef({ taskName: 'git-clone', version: '0.9' });
+    const t = new Task({ name: 'build', needs: [hub], steps: [{ name: 's', image: 'alpine' }] });
+    expect(t.needs).toContain(hub);
   });
 
   it('auto-merges statusReporter.requiredParams into params', () => {

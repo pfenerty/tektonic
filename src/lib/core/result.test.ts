@@ -42,6 +42,12 @@ describe("Result", () => {
         expect(() => String(r)).toThrow(/not bound to a task/);
     });
 
+    it("_bindToTask() throws when already bound to a different task", () => {
+        const r = new Result({ name: "commit" });
+        r._bindToTask("task-a");
+        expect(() => r._bindToTask("task-b")).toThrow(/already bound to task 'task-a'/);
+    });
+
     it("toString() returns pipeline reference expression after _bindToTask()", () => {
         const r = new Result({ name: "commit" });
         r._bindToTask("git-clone");

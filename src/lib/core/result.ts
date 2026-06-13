@@ -39,6 +39,11 @@ export class Result {
 
     /** @internal Called by {@link TaskDef} constructor to bind this result to a task. */
     _bindToTask(taskName: string): void {
+        if (this.taskName !== undefined) {
+            throw new Error(
+                `Result '${this.name}' is already bound to task '${this.taskName}' — each Result instance can only be used in one Task`,
+            );
+        }
         this.taskName = taskName;
     }
 
