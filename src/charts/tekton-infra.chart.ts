@@ -36,6 +36,8 @@ export interface TektonInfraChartProps extends ChartProps {
         claimName: string;
         storageSize: string;
         storageClassName?: string;
+        /** Access modes for this cache PVC. Defaults to `["ReadWriteOnce"]`. */
+        accessModes?: string[];
     }[];
     /**
      * Pod-level security context merged on top of `DEFAULT_POD_SECURITY_CONTEXT` for every
@@ -110,7 +112,7 @@ export class TektonInfraChart extends Chart {
 
         for (const cache of props.caches ?? []) {
             const pvcSpec: Record<string, unknown> = {
-                accessModes: ["ReadWriteMany"],
+                accessModes: cache.accessModes ?? ["ReadWriteOnce"],
                 resources: { requests: { storage: cache.storageSize } },
             };
             if (cache.storageClassName) {

@@ -26,6 +26,13 @@ export interface CacheSpec {
   /** StorageClass for the PVC. Omitted when not set — cluster default applies. */
   storageClassName?: string;
   /**
+   * Access modes for this cache PVC. Defaults to `["ReadWriteOnce"]`.
+   *
+   * Use `["ReadWriteMany"]` only with storage classes that support it
+   * (e.g. NFS, Longhorn). `local-path` only supports `ReadWriteOnce`.
+   */
+  accessModes?: string[];
+  /**
    * Cache storage backend. When set to `{ type: 'gcs', ... }`, no PVC is
    * provisioned for this cache — archives are stored in GCS instead.
    */
@@ -174,6 +181,7 @@ export class TektonProject {
             claimName: c.claimName ?? (prefix ? `${prefix}-${c.workspace.name}` : c.workspace.name),
             storageSize: c.storageSize ?? '1Gi',
             storageClassName: c.storageClassName,
+            accessModes: c.accessModes,
           })),
       });
     }

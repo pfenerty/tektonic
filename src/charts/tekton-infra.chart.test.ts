@@ -26,7 +26,7 @@ describe('TektonInfraChart', () => {
       expect(pvc).toBeDefined();
       expect(pvc.metadata.name).toBe('myapp-grype-cache');
       expect(pvc.metadata.namespace).toBe('test-ns');
-      expect(pvc.spec.accessModes).toEqual(['ReadWriteMany']);
+      expect(pvc.spec.accessModes).toEqual(['ReadWriteOnce']);
       expect(pvc.spec.resources.requests.storage).toBe('2Gi');
     });
 
@@ -91,6 +91,33 @@ describe('TektonInfraChart', () => {
       const manifests = app.charts.flatMap(c => c.toJson());
       const pvcs = manifests.filter((m: any) => m.kind === 'PersistentVolumeClaim');
       expect(pvcs).toHaveLength(0);
+    });
+
+    it('defaults cache PVC accessModes to ReadWriteOnce when omitted', () => {
+      const app = new App();
+      new TektonInfraChart(app, 'infra', {
+        ...baseProps,
+        caches: [{ workspaceName: 'npm-cache', claimName: 'npm-pvc', storageSize: '2Gi' }],
+      });
+      const manifests = app.charts.flatMap(c => c.toJson());
+      const pvc = manifests.find((m: any) => m.kind === 'PersistentVolumeClaim');
+      expect(pvc.spec.accessModes).toEqual(['ReadWriteOnce']);
+    });
+
+    it('uses provided accessModes on cache PVC', () => {
+      const app = new App();
+      new TektonInfraChart(app, 'infra', {
+        ...baseProps,
+        caches: [{
+          workspaceName: 'shared-cache',
+          claimName: 'shared-pvc',
+          storageSize: '5Gi',
+          accessModes: ['ReadWriteMany'],
+        }],
+      });
+      const manifests = app.charts.flatMap(c => c.toJson());
+      const pvc = manifests.find((m: any) => m.kind === 'PersistentVolumeClaim');
+      expect(pvc.spec.accessModes).toEqual(['ReadWriteMany']);
     });
   });
 
