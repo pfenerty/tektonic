@@ -13,6 +13,8 @@ export type { CacheBackend, BackendCtx } from "./lib/core/cache-backend";
 export { PvcBackend } from "./lib/cache/pvc-backend";
 export { GcsBackend, gcs } from "./lib/cache/gcs-backend";
 export type { GcsBackendOptions } from "./lib/cache/gcs-backend";
+export { gated } from "./lib/core/pipeline-task";
+export type { WhenExpression, PipelineTaskOverrides, PipelineTaskNode } from "./lib/core/pipeline-task";
 export { Pipeline } from "./lib/core/pipeline";
 export type { PipelineOptions } from "./lib/core/pipeline";
 export { GitPipeline } from "./lib/core/git-pipeline";
