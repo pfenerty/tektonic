@@ -43,6 +43,13 @@ export interface TaskStepSpec {
     };
     /** Per-step container securityContext override. Applied on top of the task stepTemplate. */
     securityContext?: Record<string, unknown>;
+    /** Volume mounts for this step. Each entry must reference a volume declared in the task's `volumes` array or a workspace-backed volume. */
+    volumeMounts?: {
+        name: string;
+        mountPath: string;
+        readOnly?: boolean;
+        subPath?: string;
+    }[];
 }
 
 /**

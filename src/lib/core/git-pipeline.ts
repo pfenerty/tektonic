@@ -17,6 +17,15 @@ export interface GitPipelineOptions extends PipelineOptions {
      * Defaults to `ghcr.io/pfenerty/apko-cicd/base:stable`.
      */
     cloneImage?: string;
+    /**
+     * Clone depth passed to `git fetch`. When `'full'` or `0`, the `--depth` flag is
+     * omitted entirely, fetching full history. When a positive number, uses `--depth=N`.
+     * Defaults to `1` (shallow clone) when omitted.
+     *
+     * Set to `'full'` when downstream steps need tag history — for example, git-cliff
+     * requires all tags reachable from the target commit to generate a complete changelog.
+     */
+    cloneDepth?: number | 'full';
 }
 
 /**
@@ -68,6 +77,9 @@ export class GitPipeline extends Pipeline {
         const timestampResult   = new Result({ name: "timestamp",      description: "Author timestamp (ISO 8601)" });
         const remoteUrlResult   = new Result({ name: "remote-url",     description: "Repository remote URL" });
 
+        const depth = opts.cloneDepth;
+        const depthArg = (depth === 'full' || depth === 0) ? '' : ` --depth=${depth ?? 1}`;
+
         const cloneTask = new Task({
             name: "git-clone",
             params: [url, revision],
@@ -94,10 +106,10 @@ export class GitPipeline extends Pipeline {
 git config --global --add safe.directory ${workspace.path}
 git init -b main .
 git remote add origin ${url}
-# Fetch only the target branch at depth=1. GitHub doesn't allow fetching by arbitrary
-# SHA, but the revision is always a branch tip in CI (push/PR events). Fetching a
+# Fetch only the target branch. GitHub doesn't allow fetching by arbitrary SHA,
+# but the revision is always a branch tip in CI (push/PR events). Fetching a
 # single branch avoids wildcard-refspec pack issues in newer git versions.
-git fetch --depth=1 origin ${revision}
+git fetch${depthArg} origin ${revision}
 git checkout -b ${revision} FETCH_HEAD
 
 # Write git metadata as Tekton results for downstream tasks.

@@ -215,6 +215,28 @@ describe('GitPipeline', () => {
     expect(stub.workspaces).toHaveLength(0);
   });
 
+  describe('cloneDepth', () => {
+    it('uses --depth=1 by default', () => {
+      const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
+      expect(pipeline.cloneTask.steps[0].script).toContain('--depth=1');
+    });
+
+    it('omits --depth when cloneDepth is "full"', () => {
+      const pipeline = new GitPipeline({ name: 'ci', cloneDepth: 'full', tasks: [makeTask('test')] });
+      expect(pipeline.cloneTask.steps[0].script).not.toContain('--depth=');
+    });
+
+    it('omits --depth when cloneDepth is 0', () => {
+      const pipeline = new GitPipeline({ name: 'ci', cloneDepth: 0, tasks: [makeTask('test')] });
+      expect(pipeline.cloneTask.steps[0].script).not.toContain('--depth=');
+    });
+
+    it('uses --depth=N for a positive cloneDepth number', () => {
+      const pipeline = new GitPipeline({ name: 'ci', cloneDepth: 10, tasks: [makeTask('test')] });
+      expect(pipeline.cloneTask.steps[0].script).toContain('--depth=10');
+    });
+  });
+
   it('tasks from multiple GitPipelines sharing the same instance are isolated in runAfter', () => {
     const ws = new Workspace({ name: 'workspace' });
     const shared = makeTask('shared');

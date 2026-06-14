@@ -1192,6 +1192,37 @@ describe('Task', () => {
     });
   });
 
+  describe('volumeMounts', () => {
+    it('passes volumeMounts through in synthesized step spec', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      new Task({
+        name: 'buildkit',
+        steps: [{
+          name: 'build',
+          image: 'moby/buildkit:latest',
+          volumeMounts: [
+            { name: 'buildkit-socket', mountPath: '/run/buildkit' },
+            { name: 'docker-config', mountPath: '/root/.docker', readOnly: true },
+          ],
+        }],
+        volumes: [{ name: 'buildkit-socket', emptyDir: {} }],
+      }).synth(chart, 'ns');
+      const step = chart.toJson()[0].spec.steps[0];
+      expect(step.volumeMounts).toEqual([
+        { name: 'buildkit-socket', mountPath: '/run/buildkit' },
+        { name: 'docker-config', mountPath: '/root/.docker', readOnly: true },
+      ]);
+    });
+
+    it('omits volumeMounts from step when not declared', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns');
+      expect(chart.toJson()[0].spec.steps[0].volumeMounts).toBeUndefined();
+    });
+  });
+
   describe('_toPipelineTaskSpec()', () => {
     it('generates correct spec with taskRef, params, workspaces, runAfter', () => {
       const t = new Task({
