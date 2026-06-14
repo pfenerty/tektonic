@@ -38,3 +38,13 @@ bd sync               # Sync with git
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
+## Cross-Repo Planning
+
+`tektonic` (`@pfenerty/tektonic`) is the TypeScript library consumed by `ocidex` (`make tekton-synth`) and `homelab/tekton-pipelines/`. It sits in the middle of the dependency chain: `apko-cicd → tektonic → ocidex/homelab`. Cross-cutting initiatives that span multiple repos are tracked in `~/code/common/` (issue prefix: `plan`).
+
+- `bd list` here shows only this repo's issues — cross-repo hydration is not yet implemented in beads
+- **Unified view:** `flox activate -d ~/code/ocidex -- nu ~/code/common/bd-all.nu`
+- To create a cross-repo parent epic: `cd ~/code/common && bd create --title="..." --type=epic`
+- When a local issue is part of a cross-repo initiative: `bd update <id> --notes "Parent epic: plan/<id>"`
+- Changes here typically propagate downstream: bump the npm dep in `ocidex` and `homelab/tekton-pipelines/`, then re-synth
+

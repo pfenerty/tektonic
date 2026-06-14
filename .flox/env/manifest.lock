@@ -383,5 +383,48 @@
       "group": "toplevel",
       "priority": 5
     }
-  ]
+  ],
+  "compose": {
+    "composer": {
+      "schema-version": "1.10.0",
+      "install": {
+        "nodejs": {
+          "pkg-path": "nodejs"
+        }
+      },
+      "hook": {},
+      "profile": {},
+      "options": {},
+      "include": {
+        "environments": [
+          {
+            "dir": "../common"
+          }
+        ]
+      }
+    },
+    "include": [
+      {
+        "manifest": {
+          "schema-version": "1.12.0",
+          "install": {
+            "beads": {
+              "pkg-path": "beads"
+            },
+            "repomix": {
+              "pkg-path": "repomix"
+            }
+          },
+          "hook": {},
+          "profile": {},
+          "options": {}
+        },
+        "name": "planning",
+        "descriptor": {
+          "dir": "../common"
+        }
+      }
+    ],
+    "warnings": []
+  }
 }
