@@ -6,6 +6,8 @@ import { Workspace } from './workspace';
 import { PACProject } from './pac-project';
 import { TRIGGER_EVENTS } from './trigger-events';
 
+const capturedCharts: any[] = [];
+
 vi.mock('cdk8s', async () => {
   const actual = await vi.importActual<typeof import('cdk8s')>('cdk8s');
   return {
@@ -13,11 +15,20 @@ vi.mock('cdk8s', async () => {
     App: class MockApp extends actual.App {
       synth() { /* no-op — suppress file writes in tests */ }
     },
+    Chart: class CaptureChart extends actual.Chart {
+      constructor(scope: any, id: string, props?: any) {
+        super(scope, id, props);
+        capturedCharts.push(this);
+      }
+    },
   };
 });
 
 describe('PACProject', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    capturedCharts.length = 0;
+  });
 
   const buildTask = new Task({
     name: 'build',
@@ -144,6 +155,32 @@ describe('PACProject', () => {
         repoRelativePath: '.tekton',
       }),
     ).not.toThrow();
+  });
+
+  it('constructs with glob onTargetBranch for release branch trigger', () => {
+    const pipeline = new GitPipeline({
+      name: 'release',
+      triggers: [TRIGGER_EVENTS.PUSH],
+      onTargetBranch: 'release/v*',
+      tasks: [buildTask],
+    });
+    expect(() =>
+      new PACProject({ namespace: 'ci', pipelines: [pipeline] }),
+    ).not.toThrow();
+  });
+
+  it('PipelineRun params bind source-branch to {{ source_branch }}', () => {
+    const pipeline = new GitPipeline({
+      name: 'push',
+      triggers: [TRIGGER_EVENTS.PUSH],
+      tasks: [buildTask],
+    });
+    new PACProject({ namespace: 'ci', pipelines: [pipeline] });
+
+    const allObjects = capturedCharts.flatMap((c: any) => c.toJson());
+    const pipelineRun = allObjects.find((o: any) => o.kind === 'PipelineRun');
+    const param = pipelineRun?.spec?.params?.find((p: any) => p.name === 'source-branch');
+    expect(param?.value).toBe('{{ source_branch }}');
   });
 });
 

@@ -19,11 +19,13 @@ const PAC_PARAM_BINDINGS: Record<string, string> = {
   revision: '{{ revision }}',
   'project-name': '{{ repo_name }}',
   'repo-full-name': '{{ repo_owner }}/{{ repo_name }}',
+  'source-branch': '{{ source_branch }}',
 };
 
 const EXTRA_PIPELINE_PARAMS = [
   { name: 'project-name', type: 'string' },
   { name: 'repo-full-name', type: 'string' },
+  { name: 'source-branch', type: 'string' },
 ];
 
 /** Options for {@link PACProject}. */
