@@ -34,9 +34,17 @@ Beads (`bd`) is configured at `.beads/`. Use it for ALL task tracking — no mar
 ```bash
 bd ready                              # find available work
 bd create --title="..." --type=task   # create before starting work
-bd update <id> --status=in_progress   # claim it
-bd close <id>                         # mark done
+git checkout main && git pull         # start from latest main
+git checkout -b <branch-name>         # one branch per issue
+bd update <id> --status=in_progress   # claim it before coding
+# → implement the change
+git add <changed files>               # stage only relevant files
+git commit -m "feat/fix: description (<issue-id>)"  # commit BEFORE closing
+bd close <id>                         # mark done AFTER committing
 ```
+
+**Critical:** `bd close` without a prior `git commit` leaves changes stranded on disk.
+Always include the issue ID in the commit message (e.g. `feat: add source-branch param (tektonic-wq6)`).
 
 Issue types: `bug`, `feature`, `task`, `epic`, `chore`
 Priorities: `0`=critical, `1`=high, `2`=medium (default), `3`=low, `4`=backlog
@@ -45,11 +53,13 @@ Priorities: `0`=critical, `1`=high, `2`=medium (default), `3`=low, `4`=backlog
 
 Work is NOT complete until pushed. Before ending a session:
 
-1. Close finished issues, file issues for remaining work
-2. Run quality gates if code changed (`flox activate -- npm test && flox activate -- npm run build`)
-3. Push:
+1. Verify all completed work is committed: `git status` must show no modified tracked files
+2. Close finished issues, file issues for remaining work
+3. Run quality gates if code changed (`flox activate -- npm test && flox activate -- npm run build`)
+4. Push:
    ```bash
    git pull --rebase && git push
+   git status  # must show "up to date with origin"
    ```
 
 ## Codebase Context
