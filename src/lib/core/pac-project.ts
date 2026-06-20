@@ -73,6 +73,23 @@ export interface PACProjectOptions {
    * PAC deletes older runs once this limit is exceeded. Defaults to `5`.
    */
   maxKeepRuns?: number;
+  /**
+   * Additional environment variables injected into every step of every task via
+   * `taskRunTemplate.podTemplate.env`. Applied to all TaskRun pods in all PipelineRuns.
+   *
+   * PAC template variables (e.g. `{{ git_auth_secret }}`) in `valueFrom.secretKeyRef.name`
+   * are substituted by PAC before the PipelineRun is submitted to Kubernetes, so they
+   * resolve to concrete secret names by the time Kubernetes processes the resource.
+   *
+   * @example
+   * ```ts
+   * podTemplateEnv: [{
+   *   name: 'GITHUB_TOKEN',
+   *   valueFrom: { secretKeyRef: { name: '{{ git_auth_secret }}', key: 'git-provider-token' } },
+   * }]
+   * ```
+   */
+  podTemplateEnv?: Array<{ name: string; value?: string; valueFrom?: Record<string, unknown> }>;
 }
 
 /**
@@ -214,7 +231,12 @@ export class PACProject {
           params: pipelineRunParams,
           taskRunTemplate: {
             serviceAccountName,
-            podTemplate: { securityContext: podSecurityContext },
+            podTemplate: {
+              securityContext: podSecurityContext,
+              ...(opts.podTemplateEnv && opts.podTemplateEnv.length > 0
+                ? { env: opts.podTemplateEnv }
+                : {}),
+            },
           },
           workspaces,
         },
