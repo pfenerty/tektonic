@@ -26,9 +26,9 @@ describe('scriptFromFile', () => {
     expect(s.body).toBe('log "hi"');
   });
 
-  it('infers bash from .bash and .sh', () => {
+  it('infers bash from .bash and POSIX sh from .sh', () => {
     expect(scriptFromFile(write('b.bash', 'echo hi')).language.name).toBe('bash');
-    expect(scriptFromFile(write('c.sh', 'echo hi')).language.name).toBe('bash');
+    expect(scriptFromFile(write('c.sh', 'echo hi')).language.name).toBe('sh');
   });
 
   it('infers python from .py and preserves relative indentation', () => {

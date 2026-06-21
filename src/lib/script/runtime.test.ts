@@ -3,6 +3,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { Sh } from './sh';
 import { Bash } from './bash';
 import { Nushell } from './nushell';
 import { Python } from './python';
@@ -34,6 +35,12 @@ function runWrapped(lang: ScriptLanguage, interp: string, ext: string, body: str
 }
 
 describe('script runtime contract', () => {
+  it.skipIf(!has('sh'))('sh captures a failing exit code', () => {
+    const r = runWrapped(new Sh(), 'sh', 'sh', 'echo hi\nexit 3');
+    expect(r.status).toBe(3);
+    expect(r.contract).toBe('3');
+  });
+
   it.skipIf(!has('bash'))('bash captures a failing exit code', () => {
     const r = runWrapped(new Bash(), 'bash', 'bash', 'echo hi\nexit 3');
     expect(r.status).toBe(3);

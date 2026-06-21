@@ -30,7 +30,7 @@ export { TRIGGER_EVENTS } from "./lib/core/trigger-events";
 export type { StatusReporter } from "./lib/core/status-reporter";
 
 // Scripting
-export { bash, nu, py, script, Script, languageFor, dedent, renderScript, Bash, Nushell, Python, EXIT_CODE_PATH } from "./lib/script";
+export { sh, bash, nu, py, script, Script, languageFor, dedent, renderScript, Sh, Bash, Nushell, Python, EXIT_CODE_PATH } from "./lib/script";
 export { scriptFromFile, lintCommandForFile, languageNameForFile } from "./lib/script/from-file";
 export type { ScriptLanguage, ScriptCtx, ScriptInput, ScriptObject, LanguageName } from "./lib/script";
 

@@ -6,7 +6,7 @@ import type { LanguageName } from './index';
 /** Maps a file extension to a built-in script language. */
 const EXTENSION_LANGUAGE: Record<string, LanguageName> = {
   '.bash': 'bash',
-  '.sh': 'bash',
+  '.sh': 'sh',
   '.nu': 'nushell',
   '.py': 'python',
 };

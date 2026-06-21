@@ -1,3 +1,4 @@
+import { Sh } from './sh';
 import { Bash } from './bash';
 import { Nushell } from './nushell';
 import { Python } from './python';
@@ -5,14 +6,16 @@ import type { ScriptLanguage, ScriptCtx } from './types';
 
 export type { ScriptLanguage, ScriptCtx } from './types';
 export { EXIT_CODE_PATH } from './types';
+export { Sh } from './sh';
 export { Bash } from './bash';
 export { Nushell } from './nushell';
 export { Python } from './python';
 
 /** Names of the built-in script languages. */
-export type LanguageName = 'bash' | 'nushell' | 'python';
+export type LanguageName = 'sh' | 'bash' | 'nushell' | 'python';
 
 const LANGUAGES: Record<LanguageName, ScriptLanguage> = {
+  sh: new Sh(),
   bash: new Bash(),
   nushell: new Nushell(),
   python: new Python(),
@@ -70,6 +73,8 @@ function tag(language: ScriptLanguage) {
     new Script(language, dedent(interpolate(strings, values)));
 }
 
+/** Tagged-template helper authoring a POSIX sh step body, e.g. ``sh`echo hi` ``. */
+export const sh = tag(LANGUAGES.sh);
 /** Tagged-template helper authoring a bash step body, e.g. ``bash`echo hi` ``. */
 export const bash = tag(LANGUAGES.bash);
 /** Tagged-template helper authoring a nushell step body, e.g. ``nu`print hi` ``. */
