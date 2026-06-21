@@ -27,6 +27,7 @@
     "build:watch": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint:scripts": "npm run build && node scripts/lint-scripts.cjs",
     "docs:api": "typedoc",
     "synth": "npx cdk8s synth",
     "import": "npx cdk8s import",

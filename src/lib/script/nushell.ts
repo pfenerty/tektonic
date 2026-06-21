@@ -41,6 +41,8 @@ export class Nushell implements ScriptLanguage {
   }
 
   lintCommand(file: string): string[] {
-    return ['nu', '--ide-check', file];
+    // `nu-check` returns a validity boolean; wrap it so the process exit code
+    // reflects pass/fail (unlike `nu --ide-check`, which always exits 0).
+    return ['nu', '-c', `if (nu-check ${JSON.stringify(file)}) { exit 0 } else { exit 1 }`];
   }
 }

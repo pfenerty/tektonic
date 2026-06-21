@@ -12,8 +12,12 @@ describe('Nushell plugin', () => {
     expect(nu.shebang).toBe('#!/usr/bin/env nu');
   });
 
-  it('lints with nu --ide-check', () => {
-    expect(nu.lintCommand('step.nu')).toEqual(['nu', '--ide-check', 'step.nu']);
+  it('lints with a nu-check wrapper that yields a real exit code', () => {
+    expect(nu.lintCommand('step.nu')).toEqual([
+      'nu',
+      '-c',
+      'if (nu-check "step.nu") { exit 0 } else { exit 1 }',
+    ]);
   });
 
   it('provides the log helper in the preamble', () => {

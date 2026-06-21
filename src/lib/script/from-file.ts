@@ -19,6 +19,31 @@ function stripShebang(text: string): string {
 }
 
 /**
+ * Infers the script language of a file from its extension (overridable),
+ * throwing when the extension is unknown and no override is given.
+ */
+export function languageNameForFile(filePath: string, override?: LanguageName): LanguageName {
+  const ext = path.extname(filePath).toLowerCase();
+  const language = override ?? EXTENSION_LANGUAGE[ext];
+  if (!language) {
+    throw new Error(
+      `cannot infer language from "${filePath}" (extension "${ext}"). ` +
+        `Pass a language explicitly or use one of ${Object.keys(EXTENSION_LANGUAGE).join(', ')}.`,
+    );
+  }
+  return language;
+}
+
+/**
+ * Returns the dev-harness lint/syntax-check command for a script file, chosen by
+ * the file's language (e.g. `['shellcheck', file]`). See {@link scriptFromFile}
+ * for the extension mapping.
+ */
+export function lintCommandForFile(filePath: string, opts?: { language?: LanguageName }): string[] {
+  return languageFor(languageNameForFile(filePath, opts?.language)).lintCommand(filePath);
+}
+
+/**
  * Authors a step script from a file on disk, inferring the language from the
  * extension (`.bash`/`.sh` → bash, `.nu` → nushell, `.py` → python).
  *
@@ -33,14 +58,7 @@ function stripShebang(text: string): string {
  * @param opts.language - Overrides extension-based inference.
  */
 export function scriptFromFile(filePath: string, opts?: { language?: LanguageName }): Script {
-  const ext = path.extname(filePath).toLowerCase();
-  const language = opts?.language ?? EXTENSION_LANGUAGE[ext];
-  if (!language) {
-    throw new Error(
-      `scriptFromFile: cannot infer language from "${filePath}" (extension "${ext}"). ` +
-        `Pass { language } explicitly or use one of ${Object.keys(EXTENSION_LANGUAGE).join(', ')}.`,
-    );
-  }
+  const language = languageNameForFile(filePath, opts?.language);
   const raw = fs.readFileSync(filePath, 'utf8');
   return new Script(languageFor(language), dedent(stripShebang(raw)));
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { scriptFromFile } from './from-file';
+import { scriptFromFile, lintCommandForFile, languageNameForFile } from './from-file';
 
 let dir: string;
 const write = (name: string, content: string): string => {
@@ -46,5 +46,21 @@ describe('scriptFromFile', () => {
   it('honours an explicit language override', () => {
     const p = write('f.txt', 'print hi');
     expect(scriptFromFile(p, { language: 'nushell' }).language.name).toBe('nushell');
+  });
+});
+
+describe('lint helpers', () => {
+  it('returns the per-language lint command by extension', () => {
+    expect(lintCommandForFile('s.bash')).toEqual(['shellcheck', 's.bash']);
+    expect(lintCommandForFile('s.sh')).toEqual(['shellcheck', 's.sh']);
+    expect(lintCommandForFile('s.nu')).toEqual(['nu', '-c', 'if (nu-check "s.nu") { exit 0 } else { exit 1 }']);
+    expect(lintCommandForFile('s.py')).toEqual(['python3', '-m', 'py_compile', 's.py']);
+  });
+
+  it('honours a language override and rejects unknown extensions', () => {
+    expect(lintCommandForFile('s.txt', { language: 'python' })).toEqual([
+      'python3', '-m', 'py_compile', 's.txt',
+    ]);
+    expect(() => languageNameForFile('s.txt')).toThrow(/cannot infer language/);
   });
 });
