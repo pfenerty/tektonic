@@ -29,6 +29,10 @@ export type { PACProjectOptions } from "./lib/core/pac-project";
 export { TRIGGER_EVENTS } from "./lib/core/trigger-events";
 export type { StatusReporter } from "./lib/core/status-reporter";
 
+// Scripting
+export { bash, nu, py, script, Script, languageFor, dedent, renderScript, Bash, Nushell, Python, EXIT_CODE_PATH } from "./lib/script";
+export type { ScriptLanguage, ScriptCtx, ScriptInput, ScriptObject, LanguageName } from "./lib/script";
+
 // Reporters
 export { GitHubStatusReporter } from "./lib/reporters/github-status-reporter";
 export type { GitHubStatusReporterOptions } from "./lib/reporters/github-status-reporter";

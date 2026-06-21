@@ -4,6 +4,7 @@ import { TaskLike, TaskDef } from './task';
 import { TRIGGER_EVENTS } from './trigger-events';
 import { TEKTON_API_V1, DEFAULT_POD_SECURITY_CONTEXT } from '../constants';
 import type { CacheSpec } from './tekton-project';
+import type { LanguageName } from '../script';
 
 // Maps TRIGGER_EVENTS values to PAC on-event annotation strings
 const PAC_EVENT: Partial<Record<TRIGGER_EVENTS, string>> = {
@@ -65,6 +66,12 @@ export interface PACProjectOptions {
    * for every task's stepTemplate.
    */
   defaultStepSecurityContext?: Record<string, unknown>;
+  /**
+   * Default scripting language for steps whose `script` is a bare body (a
+   * `{ language, body }` object or a raw string without a shebang). Individual
+   * tasks override via their own `defaultLanguage`; tagged bodies always win.
+   */
+  defaultLanguage?: LanguageName;
   /** Service account name for PipelineRun pods. Defaults to `"tekton-triggers"`. */
   serviceAccountName?: string;
   /**
@@ -146,7 +153,7 @@ export class PACProject {
     for (const [name, task] of uniqueTasks) {
       if (!(task instanceof TaskDef)) continue;
       const chart = new Chart(taskApp, name);
-      task.synth(chart, namespace, prefix || undefined, opts.defaultStepSecurityContext);
+      task.synth(chart, namespace, prefix || undefined, opts.defaultStepSecurityContext, opts.defaultLanguage);
     }
     taskApp.synth();
 

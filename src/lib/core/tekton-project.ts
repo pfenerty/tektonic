@@ -6,6 +6,7 @@ import { Workspace } from './workspace';
 import { TRIGGER_EVENTS } from './trigger-events';
 import type { CacheBackend } from './cache-backend';
 import type { VcsProvider } from '../triggers/vcs-provider';
+import type { LanguageName } from '../script';
 
 /**
  * Specifies a persistent cache volume to provision and bind for a pipeline workspace.
@@ -79,6 +80,12 @@ export interface TektonProjectOptions {
    */
   defaultStepSecurityContext?: Record<string, unknown>;
   /**
+   * Default scripting language for steps whose `script` is a bare body (a
+   * `{ language, body }` object or a raw string without a shebang). Individual
+   * tasks override via their own `defaultLanguage`; tagged bodies always win.
+   */
+  defaultLanguage?: LanguageName;
+  /**
    * Additional annotations to apply to the generated Tekton triggers ServiceAccount.
    * Use this to configure GKE Workload Identity, e.g.:
    *
@@ -128,7 +135,7 @@ export class TektonProject {
     for (const [name, task] of uniqueTasks) {
       if (!(task instanceof TaskDef)) continue;
       const chart = new Chart(app, prefix ? `${prefix}-task-${name}` : `task-${name}`);
-      task.synth(chart, namespace, prefix || undefined, opts.defaultStepSecurityContext);
+      task.synth(chart, namespace, prefix || undefined, opts.defaultStepSecurityContext, opts.defaultLanguage);
     }
 
     // 3. Build each Pipeline

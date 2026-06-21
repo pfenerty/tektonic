@@ -13,6 +13,8 @@ import { Result } from "./result";
 import { PvcBackend } from "../cache/pvc-backend";
 import type { StatusReporter } from "./status-reporter";
 import type { CacheBackend, BackendCtx } from "./cache-backend";
+import { renderScript, EXIT_CODE_PATH } from "../script";
+import type { ScriptInput, LanguageName, ScriptCtx } from "../script";
 
 /** Specification for a single step within a Tekton Task. */
 export interface TaskStepSpec {
@@ -24,8 +26,13 @@ export interface TaskStepSpec {
     command?: string[];
     /** Arguments passed to the entrypoint. */
     args?: string[];
-    /** Inline script executed by the step. */
-    script?: string;
+    /**
+     * Script executed by the step. Accepts a raw string (shebang-based,
+     * back-compatible), a language-tagged body (`bash`/`nu`/`py`), or a
+     * `{ language, body }` object. A raw string without a shebang is rendered
+     * with the task/project `defaultLanguage` when one is set.
+     */
+    script?: ScriptInput;
     /** Working directory for the step. */
     workingDir?: string;
     /** Environment variables injected into the step container. */
@@ -261,6 +268,13 @@ export interface TaskOptions {
      * Follows the Kubernetes `v1.Volume` schema — `name` is required.
      */
     volumes?: TaskVolumeSpec[];
+    /**
+     * Default scripting language for this task's steps whose `script` is a bare
+     * body (a `{ language, body }` object or a raw string without a shebang).
+     * Language-tagged bodies (`bash`/`nu`/`py`) carry their own language and
+     * ignore this. Falls back to the project-level default when unset.
+     */
+    defaultLanguage?: LanguageName;
 }
 
 /**
@@ -295,6 +309,8 @@ export class TaskDef implements TaskLike {
     readonly sidecars: TaskSidecarSpec[];
     /** Additional Kubernetes volumes available for mounting in steps and sidecars. */
     readonly volumes: TaskVolumeSpec[];
+    /** Default scripting language for bare-body steps; falls back to the project default. */
+    readonly defaultLanguage?: LanguageName;
 
     constructor(opts: TaskOptions) {
         this.name = opts.name;
@@ -325,6 +341,7 @@ export class TaskDef implements TaskLike {
         for (const r of this.results) r._bindToTask(this.name);
         this.sidecars = opts.sidecars ?? [];
         this.volumes = opts.volumes ?? [];
+        this.defaultLanguage = opts.defaultLanguage;
     }
 
     /**
@@ -334,12 +351,15 @@ export class TaskDef implements TaskLike {
      *   top of `DEFAULT_STEP_SECURITY_CONTEXT`. Supplied by `TektonProject` from the project's
      *   `defaultStepSecurityContext` option. The task's own `stepTemplate.securityContext` (if
      *   any) takes precedence over this via the spread in stepTemplate.
+     * @param projectDefaultLanguage - Project-level default scripting language, used for
+     *   bare-body steps when the task does not set its own `defaultLanguage`.
      */
     synth(
         scope: Construct,
         namespace: string,
         namePrefix?: string,
         stepSecurityContext?: Record<string, unknown>,
+        projectDefaultLanguage?: LanguageName,
     ): void {
         const resourceName = namePrefix
             ? `${namePrefix}-${this.name}`
@@ -365,9 +385,17 @@ export class TaskDef implements TaskLike {
             ...saveSteps,
             ...reporterStep,
         ];
+        // captureExitCode is wired to the status contract in a follow-up issue
+        // (tektonic-m8d); for now the language renders shebang + helper preamble.
+        const renderCtx: ScriptCtx = { exitCodePath: EXIT_CODE_PATH, captureExitCode: false };
+        const defaultLanguage = this.defaultLanguage ?? projectDefaultLanguage;
         const steps = allSteps.map((s) => {
-            const { securityContext, ...rest } = s as TaskStepSpec;
-            return securityContext ? { ...rest, securityContext } : rest;
+            const { securityContext, script, ...rest } = s as TaskStepSpec;
+            const withScript =
+                script !== undefined
+                    ? { ...rest, script: renderScript(script, renderCtx, defaultLanguage) }
+                    : rest;
+            return securityContext ? { ...withScript, securityContext } : withScript;
         });
         new ApiObject(scope, this.name, {
             apiVersion: TEKTON_API_V1,

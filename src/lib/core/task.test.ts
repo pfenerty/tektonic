@@ -8,6 +8,7 @@ import { HubTaskRef } from './hub-task-ref';
 import { gcs } from '../cache/gcs-backend';
 import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES, DEFAULT_BASE_IMAGE, DEFAULT_GCS_CACHE_IMAGE } from '../constants';
 import { GitHubStatusReporter } from '../reporters/github-status-reporter';
+import { nu } from '../script';
 
 describe('Task', () => {
   const workspace = new Workspace({ name: 'workspace' });
@@ -1253,6 +1254,49 @@ describe('Task', () => {
       const t = new Task({ name: 'first', steps: [{ name: 's', image: 'alpine' }] });
       const spec = t._toPipelineTaskSpec([]);
       expect(spec.runAfter).toBeUndefined();
+    });
+  });
+
+  describe('script authoring', () => {
+    const stepScript = (t: Task): string => {
+      const app = new App();
+      const chart = new Chart(app, 'c');
+      t.synth(chart, 'ns');
+      return chart.toJson()[0].spec.steps[0].script;
+    };
+
+    it('renders a language-tagged body to a shebang script', () => {
+      const t = new Task({
+        name: 'fmt',
+        steps: [{ name: 's', image: 'alpine', script: nu`log "hi"` }],
+      });
+      const s = stepScript(t);
+      expect(s.startsWith('#!/usr/bin/env nu')).toBe(true);
+      expect(s).toContain('def log [msg: string]');
+      expect(s).toContain('log "hi"');
+    });
+
+    it('passes a raw shebang string through unchanged', () => {
+      const raw = '#!/bin/sh\necho hi';
+      const t = new Task({ name: 'r', steps: [{ name: 's', image: 'alpine', script: raw }] });
+      expect(stepScript(t)).toBe(raw);
+    });
+
+    it('applies the task defaultLanguage to a bare string', () => {
+      const t = new Task({
+        name: 'd',
+        defaultLanguage: 'bash',
+        steps: [{ name: 's', image: 'alpine', script: 'echo hi' }],
+      });
+      expect(stepScript(t).startsWith('#!/usr/bin/env bash')).toBe(true);
+    });
+
+    it('lets the project defaultLanguage apply when the task has none', () => {
+      const t = new Task({ name: 'p', steps: [{ name: 's', image: 'alpine', script: 'echo hi' }] });
+      const app = new App();
+      const chart = new Chart(app, 'c');
+      t.synth(chart, 'ns', undefined, undefined, 'bash');
+      expect(chart.toJson()[0].spec.steps[0].script.startsWith('#!/usr/bin/env bash')).toBe(true);
     });
   });
 });
