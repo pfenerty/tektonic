@@ -1,4 +1,3 @@
-import * as path from 'path';
 import { App, ApiObject, Chart } from 'cdk8s';
 import { Pipeline } from './pipeline';
 import { TaskLike, TaskDef } from './task';
@@ -143,7 +142,7 @@ export class PACProject {
     }
 
     // 2. Synthesize Task YAML to <outdir>/tasks/
-    const taskApp = new App({ outdir: path.join(outdir, 'tasks') });
+    const taskApp = new App({ outdir: `${outdir}/tasks` });
     for (const [name, task] of uniqueTasks) {
       if (!(task instanceof TaskDef)) continue;
       const chart = new Chart(taskApp, name);

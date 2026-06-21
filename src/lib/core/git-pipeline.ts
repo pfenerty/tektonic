@@ -144,11 +144,9 @@ $timestamp      | save -f ${timestampResult.path}
             }
             // Inject workspace path as the default workingDir via stepTemplate so task steps
             // don't need to set it explicitly. User-provided stepTemplate.workingDir wins.
-            if (!(task as any).stepTemplate?.workingDir) {
-                (task as any).stepTemplate = {
-                    workingDir: workspace.path,
-                    ...(task as any).stepTemplate,
-                };
+            const t = task as { stepTemplate?: Record<string, unknown> };
+            if (!t.stepTemplate?.workingDir) {
+                t.stepTemplate = { workingDir: workspace.path, ...t.stepTemplate };
             }
         }
 

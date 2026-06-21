@@ -118,6 +118,7 @@ export class GitHubVcsProvider implements VcsProvider {
       };
     }
 
-    throw new Error(`GitHubVcsProvider: unsupported event type "${event}"`);
+    const _exhaustive: never = event;
+    throw new Error(`GitHubVcsProvider: unsupported event type "${_exhaustive}"`);
   }
 }

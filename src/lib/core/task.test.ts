@@ -872,7 +872,9 @@ describe('Task', () => {
       t.synth(chart, 'ns');
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(save.script).toContain('gcloud storage ls -l');
-      expect(save.script).toContain('gcloud storage rm $e.url | complete | ignore');
+      expect(save.script).toContain('let result = (^gcloud storage rm $e.url | complete)');
+      expect(save.script).toContain('if $result.exit_code == 0');
+      expect(save.script).toContain('warn: failed to evict');
       expect(save.script).toContain('sort-by created');
     });
 
