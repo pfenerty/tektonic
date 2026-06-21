@@ -24,11 +24,13 @@ describe('Bash plugin', () => {
     expect(out).not.toContain(EXIT_CODE_PATH);
   });
 
-  it('with capture, runs body in a subshell and records the exit code', () => {
+  it('with capture, runs body in a subshell and records the worst exit code', () => {
     const out = bash.wrap('exit 3', ctx(true));
     expect(out).toContain('(\nexit 3\n)');
     expect(out).toContain('__tek_rc=$?');
-    expect(out).toContain(`printf '%s' "$__tek_rc" > ${EXIT_CODE_PATH}`);
+    expect(out).toContain(`__tek_prev=$(cat ${EXIT_CODE_PATH} 2>/dev/null || echo 0)`);
+    expect(out).toContain('if [ "$__tek_rc" -gt "$__tek_prev" ]; then __tek_prev="$__tek_rc"; fi');
+    expect(out).toContain(`printf '%s' "$__tek_prev" > ${EXIT_CODE_PATH}`);
     expect(out).toContain('exit "$__tek_rc"');
   });
 });

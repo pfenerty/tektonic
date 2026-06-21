@@ -18,12 +18,13 @@ export interface StatusReporter {
 
   /**
    * Returns a step that reports the final status of the given context.
-   * The step reads the exit code from `/tekton/home/.exit-code` and reports
-   * success or failure accordingly.
+   * The step reads the captured exit code from {@link EXIT_CODE_PATH} and
+   * reports success or failure accordingly.
    *
-   * Add this as the last step in any task that should report status.
-   * The preceding work step must use `onError: 'continue'` and write its
-   * exit code to `/tekton/home/.exit-code`.
+   * `TaskDef.synth` appends this as the last step and, for every preceding user
+   * step, automatically enables exit-code capture and sets `onError: 'continue'`
+   * — so the user body just exits naturally; no manual contract-file writes are
+   * needed.
    */
   finalStep(context: string): TaskStepSpec;
 

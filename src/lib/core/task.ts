@@ -379,24 +379,37 @@ export class TaskDef implements TaskLike {
             this.statusReporter && this.statusContext
                 ? [this.statusReporter.finalStep(this.statusContext)]
                 : [];
-        const allSteps = [
-            ...restoreSteps,
-            ...this.steps,
-            ...saveSteps,
-            ...reporterStep,
-        ];
-        // captureExitCode is wired to the status contract in a follow-up issue
-        // (tektonic-m8d); for now the language renders shebang + helper preamble.
-        const renderCtx: ScriptCtx = { exitCodePath: EXIT_CODE_PATH, captureExitCode: false };
+        // When this task reports status, the framework owns the exit-code contract:
+        // user steps capture their (worst) exit code to EXIT_CODE_PATH and run with
+        // onError:'continue' so the appended reporter step always runs and reads it.
+        // The user body therefore just exits naturally — no hand-written plumbing.
+        const reporting = Boolean(this.statusReporter && this.statusContext);
         const defaultLanguage = this.defaultLanguage ?? projectDefaultLanguage;
-        const steps = allSteps.map((s) => {
-            const { securityContext, script, ...rest } = s as TaskStepSpec;
-            const withScript =
-                script !== undefined
-                    ? { ...rest, script: renderScript(script, renderCtx, defaultLanguage) }
-                    : rest;
-            return securityContext ? { ...withScript, securityContext } : withScript;
-        });
+        const userCtx: ScriptCtx = { exitCodePath: EXIT_CODE_PATH, captureExitCode: reporting };
+        const libCtx: ScriptCtx = { exitCodePath: EXIT_CODE_PATH, captureExitCode: false };
+
+        const renderStep = (
+            s: TaskStepSpec,
+            renderCtx: ScriptCtx,
+            injectOnError: boolean,
+        ): Record<string, unknown> => {
+            const { securityContext, script, onError, ...rest } = s;
+            const out: Record<string, unknown> = { ...rest };
+            if (script !== undefined) {
+                out.script = renderScript(script, renderCtx, defaultLanguage);
+            }
+            const effectiveOnError = onError ?? (injectOnError ? "continue" : undefined);
+            if (effectiveOnError) out.onError = effectiveOnError;
+            if (securityContext) out.securityContext = securityContext;
+            return out;
+        };
+
+        const steps = [
+            ...restoreSteps.map((s) => renderStep(s, libCtx, false)),
+            ...this.steps.map((s) => renderStep(s, userCtx, reporting)),
+            ...saveSteps.map((s) => renderStep(s, libCtx, false)),
+            ...reporterStep.map((s) => renderStep(s, libCtx, false)),
+        ];
         new ApiObject(scope, this.name, {
             apiVersion: TEKTON_API_V1,
             kind: "Task",

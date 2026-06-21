@@ -6,10 +6,11 @@ import type { ScriptLanguage, ScriptCtx } from './types';
  * The preamble provides the `log` helper previously copy-pasted as `nuHeader`
  * in consumers. Nushell's `exit` terminates the process immediately and cannot
  * be trapped, so the captured-exit contract runs the body inside `def main []`
- * wrapped in `try/catch`: clean completion records `0`, a raised nushell error
- * records `1`. Bodies signal failure by raising (`error make`) or by a failing
+ * wrapped in `try/catch`: clean completion yields `0`, a raised nushell error
+ * yields `1`. Bodies signal failure by raising (`error make`) or by a failing
  * external command — not by calling `exit` directly, which would bypass the
- * capture. The recorded code is written to the contract path and re-exited.
+ * capture. The contract file keeps the *worst* code seen across a task's steps
+ * (a later success cannot mask an earlier failure); the step re-exits its own.
  */
 export class Nushell implements ScriptLanguage {
   readonly name = 'nushell';
@@ -32,7 +33,9 @@ export class Nushell implements ScriptLanguage {
       body,
       '}',
       'let __tek_rc = (try { main; 0 } catch { |e| print $"error: ($e.msg)"; 1 })',
-      `$"($__tek_rc)" | save -f ${ctx.exitCodePath}`,
+      `let __tek_prev = (try { open --raw ${ctx.exitCodePath} | str trim | into int } catch { 0 })`,
+      'let __tek_worst = ([$__tek_prev $__tek_rc] | math max)',
+      `$"($__tek_worst)" | save -f ${ctx.exitCodePath}`,
       'exit $__tek_rc',
     ].join('\n');
   }

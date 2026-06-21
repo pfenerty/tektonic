@@ -24,11 +24,12 @@ describe('Nushell plugin', () => {
     expect(out).not.toContain(EXIT_CODE_PATH);
   });
 
-  it('with capture, runs body in main under try/catch and records the exit code', () => {
+  it('with capture, runs body in main under try/catch and records the worst exit code', () => {
     const out = nu.wrap('^gofmt -l .', ctx(true));
     expect(out).toContain('def main [] {\n^gofmt -l .\n}');
     expect(out).toContain('try { main; 0 } catch');
-    expect(out).toContain(`$"($__tek_rc)" | save -f ${EXIT_CODE_PATH}`);
+    expect(out).toContain('[$__tek_prev $__tek_rc] | math max');
+    expect(out).toContain(`$"($__tek_worst)" | save -f ${EXIT_CODE_PATH}`);
     expect(out).toContain('exit $__tek_rc');
   });
 });

@@ -8,7 +8,7 @@ import { HubTaskRef } from './hub-task-ref';
 import { gcs } from '../cache/gcs-backend';
 import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES, DEFAULT_BASE_IMAGE, DEFAULT_GCS_CACHE_IMAGE } from '../constants';
 import { GitHubStatusReporter } from '../reporters/github-status-reporter';
-import { nu } from '../script';
+import { nu, EXIT_CODE_PATH } from '../script';
 
 describe('Task', () => {
   const workspace = new Workspace({ name: 'workspace' });
@@ -1297,6 +1297,51 @@ describe('Task', () => {
       const chart = new Chart(app, 'c');
       t.synth(chart, 'ns', undefined, undefined, 'bash');
       expect(chart.toJson()[0].spec.steps[0].script.startsWith('#!/usr/bin/env bash')).toBe(true);
+    });
+  });
+
+  describe('status contract (m8d)', () => {
+    const synthSteps = (t: Task) => {
+      const app = new App();
+      const chart = new Chart(app, 'c');
+      t.synth(chart, 'ns');
+      return chart.toJson()[0].spec.steps as Array<Record<string, string>>;
+    };
+
+    it('captures exit code + injects onError on user steps, and the reporter reads the contract', () => {
+      const t = new Task({
+        name: 'fmt',
+        statusReporter: new GitHubStatusReporter(),
+        steps: [{ name: 'fmt', image: 'alpine', script: nu`log "hi"` }],
+      });
+      const steps = synthSteps(t);
+      const user = steps.find((s) => s.name === 'fmt')!;
+      expect(user.onError).toBe('continue');
+      expect(user.script).toContain('math max');
+      expect(user.script).toContain(`save -f ${EXIT_CODE_PATH}`);
+      const report = steps.find((s) => s.name === 'report-status')!;
+      expect(report.script).toContain(EXIT_CODE_PATH);
+    });
+
+    it('does not capture or inject onError when there is no reporter', () => {
+      const t = new Task({
+        name: 'fmt',
+        steps: [{ name: 'fmt', image: 'alpine', script: nu`log "hi"` }],
+      });
+      const user = synthSteps(t).find((s) => s.name === 'fmt')!;
+      expect(user.onError).toBeUndefined();
+      expect(user.script).not.toContain('math max');
+      expect(user.script).not.toContain(EXIT_CODE_PATH);
+    });
+
+    it('preserves an explicit step onError', () => {
+      const t = new Task({
+        name: 'fmt',
+        statusReporter: new GitHubStatusReporter(),
+        steps: [{ name: 'fmt', image: 'alpine', script: nu`log "hi"`, onError: 'stopAndFail' }],
+      });
+      const user = synthSteps(t).find((s) => s.name === 'fmt')!;
+      expect(user.onError).toBe('stopAndFail');
     });
   });
 });

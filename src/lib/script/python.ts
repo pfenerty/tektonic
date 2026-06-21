@@ -14,8 +14,9 @@ function indent(body: string): string {
  * The preamble provides a `log` helper. When capturing, the body is placed
  * inside `def _tek_main()` (re-indented one level) so `sys.exit(N)` raises
  * `SystemExit`, which the wrapper catches and maps to an exit code; any other
- * uncaught exception maps to `1` after printing a traceback. The code is written
- * to the contract path and re-raised. Bodies just `sys.exit(N)` or return.
+ * uncaught exception maps to `1` after printing a traceback. The contract file
+ * keeps the *worst* code seen across a task's steps (a later success cannot mask
+ * an earlier failure); the step re-exits its own. Bodies just `sys.exit(N)`.
  */
 export class Python implements ScriptLanguage {
   readonly name = 'python';
@@ -47,8 +48,12 @@ export class Python implements ScriptLanguage {
       '    _tek_rc = _e.code if isinstance(_e.code, int) else (0 if _e.code is None else 1)',
       'except BaseException:',
       '    import traceback; traceback.print_exc(); _tek_rc = 1',
+      'try:',
+      `    with open("${ctx.exitCodePath}") as _f: _tek_prev = int(_f.read().strip() or 0)`,
+      'except Exception:',
+      '    _tek_prev = 0',
       `with open("${ctx.exitCodePath}", "w") as _f:`,
-      '    _f.write(str(_tek_rc))',
+      '    _f.write(str(max(_tek_prev, _tek_rc)))',
       'sys.exit(_tek_rc)',
     ].join('\n');
   }

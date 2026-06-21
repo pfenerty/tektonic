@@ -29,6 +29,7 @@ describe('Python plugin', () => {
     expect(out).toContain('def _tek_main():\n    log("checking")\n    sys.exit(2)');
     expect(out).toContain('except SystemExit as _e:');
     expect(out).toContain(`with open("${EXIT_CODE_PATH}", "w") as _f:`);
+    expect(out).toContain('_f.write(str(max(_tek_prev, _tek_rc)))');
     expect(out).toContain('sys.exit(_tek_rc)');
   });
 
