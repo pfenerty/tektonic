@@ -28,8 +28,8 @@
 # Allows hydrating from multiple repositories and routing writes to the correct JSONL
 repos:
   primary: "."
-  additional:
-    - ~/code/common  # Cross-repo epics (apko-cicd → tektonic → ocidex)
+  # additional: removed — unimplemented multi-repo hydration corrupts read
+  # consistency (see homelab-pn2). Cross-repo planning lives in ~/code/common.
 
 # Integration settings (access with 'bd config get/set')
 # These are stored in the database, not in this file:
