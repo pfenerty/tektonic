@@ -1,6 +1,13 @@
 import type { TaskCacheSpec, TaskStepSpec } from "../core/task";
 import type { BackendCtx, CacheBackend } from "../core/cache-backend";
-import { threadFlag, hashExpr } from "./shared";
+import type { Script } from "../script";
+import {
+    threadFlag,
+    hashExpr,
+    cacheScript,
+    COMPRESSED_CACHE_LANGUAGE,
+    PORTABLE_CACHE_LANGUAGE,
+} from "./shared";
 
 /**
  * PVC-based cache backend (the default when no `backend` is specified).
@@ -41,7 +48,7 @@ export class PvcBackend implements CacheBackend {
         return `/tekton/home/.cache-${c.name}-hash`;
     }
 
-    private _makeRestoreScript(c: TaskCacheSpec, taskName?: string): string {
+    private _makeRestoreScript(c: TaskCacheSpec, taskName?: string): Script {
         const wsName = c.workspace!.name;
         const wsPath = `$(workspaces.${wsName}.path)`;
         const hashFile = this._hashFilePath(c, taskName);
@@ -50,18 +57,14 @@ export class PvcBackend implements CacheBackend {
 
         if (c.compress) {
             const expr = hashExpr(c);
-            return `#!/usr/bin/env nu
-def log [msg: string] {
-  print $"[(date now | format date '%H:%M:%S')] ${label}: ($msg)"
-}
-
-${expr}
+            return cacheScript(
+                `${expr}
 $hash | save -f ${hashFile}
 let archive = $"${wsPath}/($hash).tar.zst"
 
 if ($archive | path exists) {
   let archive_size = (ls $archive | get size.0)
-  log $"hit ($hash) size=($archive_size)"
+  log $"${label}: hit ($hash) size=($archive_size)"
   let cache_paths = [${c.paths.map((p) => `"${p}"`).join(", ")}]
   for p in $cache_paths {
     if ($p | path exists) { ^chmod -R u+w $p; rm -rf $p }
@@ -69,12 +72,14 @@ if ($archive | path exists) {
   let t0 = (date now)
   ^zstd -d ${flag} -c $archive | ^tar xf - -o --no-same-permissions
   let elapsed = (((date now) - $t0) | into int) / 1_000_000_000
-  log $"restored in ($elapsed)s"
+  log $"${label}: restored in ($elapsed)s"
 } else {
-  log $"miss ($hash)"
-}`;
+  log $"${label}: miss ($hash)"
+}`,
+                COMPRESSED_CACHE_LANGUAGE,
+            );
         }
-        // Uncompressed PVC restore
+        // Uncompressed PVC restore — portable POSIX sh, no nushell required.
         const keyFiles = c.key.join(" ");
         const copyPaths = c.paths
             .map((p) => `  [ -e "$CACHE_DIR/${p}" ] && cp -r "$CACHE_DIR/${p}" "./${p}" || true`)
@@ -83,20 +88,22 @@ if ($archive | path exists) {
             c.key.length === 0
                 ? `HASH=$(echo -n "" | sha256sum | cut -c1-16)`
                 : `HASH=$(cat ${keyFiles} | sha256sum | cut -c1-16)`;
-        return `#!/bin/sh
-set -e
+        return cacheScript(
+            `set -e
 ${hashCmd}
 echo "$HASH" > ${hashFile}
 CACHE_DIR="${wsPath}/$HASH"
 if [ -d "$CACHE_DIR" ]; then
-  echo "[$(date +%H:%M:%S)] ${label}: hit $HASH"
+  log "${label}: hit $HASH"
 ${copyPaths}
 else
-  echo "[$(date +%H:%M:%S)] ${label}: miss $HASH"
-fi`;
+  log "${label}: miss $HASH"
+fi`,
+            PORTABLE_CACHE_LANGUAGE,
+        );
     }
 
-    private _makeSaveScript(c: TaskCacheSpec, taskName?: string): string {
+    private _makeSaveScript(c: TaskCacheSpec, taskName?: string): Script {
         const wsName = c.workspace!.name;
         const wsPath = `$(workspaces.${wsName}.path)`;
         const hashFile = this._hashFilePath(c, taskName);
@@ -110,46 +117,46 @@ fi`;
             const pathList = c.paths.map((p) => `"${p}"`).join(", ");
             const skipExisting = forceSave
                 ? ""
-                : `if ($archive | path exists) { log $"($hash) exists, skipping"; exit 0 }\n`;
-            return `#!/usr/bin/env nu
-def log [msg: string] {
-  print $"[(date now | format date '%H:%M:%S')] ${label}: ($msg)"
-}
-
-let hash = (try { open --raw ${hashFile} | str trim } catch { "" })
-if ($hash | is-empty) { log "no hash, skipping"; exit 0 }
+                : `if ($archive | path exists) { log $"${label}: ($hash) exists, skipping"; exit 0 }\n`;
+            return cacheScript(
+                `let hash = (try { open --raw ${hashFile} | str trim } catch { "" })
+if ($hash | is-empty) { log "${label}: no hash, skipping"; exit 0 }
 
 let archive = $"${wsPath}/($hash).tar.zst"
 ${skipExisting}
 let paths = [${pathList}] | where { |p| ($p | path exists) }
-if ($paths | is-empty) { log "no paths to cache"; exit 0 }
+if ($paths | is-empty) { log "${label}: no paths to cache"; exit 0 }
 
 for p in $paths { ^chmod -R u+w $p }
 
 let max = ${maxEntries}
 if $max > 0 {
   let entries = (try { ls ${wsPath}/*.tar.zst | sort-by modified | reverse | skip $max } catch { [] })
-  for e in $entries { log $"evicting ($e.name | path basename)"; rm $e.name }
+  for e in $entries { log $"${label}: evicting ($e.name | path basename)"; rm $e.name }
 }
 
 let uncompressed = ($paths | each { |p| try { du $p | get apparent.0 | into int } catch { 0 } } | math sum)
-log $"compressing (($uncompressed / 1_000_000) | math round --precision 1)MB uncompressed ..."
+log $"${label}: compressing (($uncompressed / 1_000_000) | math round --precision 1)MB uncompressed ..."
 let t0 = (date now)
 ^tar cf - ...$paths | ^zstd -${compressionLevel} ${flag}${forceSave ? " -f" : ""} -o $archive
 let elapsed = (((date now) - $t0) | into int) / 1_000_000_000
 let compressed = (ls $archive | get size.0)
 let ratio = ($uncompressed / ($compressed | into int) | math round --precision 1)
-log $"saved ($compressed) ratio=($ratio)x in ($elapsed)s"`;
+log $"${label}: saved ($compressed) ratio=($ratio)x in ($elapsed)s"`,
+                COMPRESSED_CACHE_LANGUAGE,
+            );
         }
-        // Uncompressed PVC save
+        // Uncompressed PVC save — portable POSIX sh, no nushell required.
         const copyPaths = c.paths.map((p) => `  cp -r "./${p}" "$CACHE_DIR/${p}"`).join("\n");
         const saveCondition = forceSave
-            ? `echo "saving cache ($HASH)"\n  mkdir -p "$CACHE_DIR"\n${copyPaths}`
-            : `if [ ! -d "$CACHE_DIR" ]; then\n  echo "saving cache ($HASH)"\n  mkdir -p "$CACHE_DIR"\n${copyPaths}\nfi`;
-        return `#!/bin/sh
-HASH=$(cat ${hashFile} 2>/dev/null || echo "")
+            ? `log "${label}: saving cache ($HASH)"\n  mkdir -p "$CACHE_DIR"\n${copyPaths}`
+            : `if [ ! -d "$CACHE_DIR" ]; then\n  log "${label}: saving cache ($HASH)"\n  mkdir -p "$CACHE_DIR"\n${copyPaths}\nfi`;
+        return cacheScript(
+            `HASH=$(cat ${hashFile} 2>/dev/null || echo "")
 [ -z "$HASH" ] && exit 0
 CACHE_DIR="${wsPath}/$HASH"
-${saveCondition}`;
+${saveCondition}`,
+            PORTABLE_CACHE_LANGUAGE,
+        );
     }
 }

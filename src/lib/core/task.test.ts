@@ -426,6 +426,52 @@ describe('Task', () => {
       });
     });
 
+    describe('ScriptLanguage routing (de-mandate nushell)', () => {
+      const renderCache = (spec: any) => {
+        const app = new App();
+        const chart = new Chart(app, 'test');
+        const t = new Task({ name: 'c', steps: [{ name: 's', image: 'alpine' }], caches: [spec] });
+        t.synth(chart, 'ns');
+        const steps = chart.toJson()[0].spec.steps;
+        return {
+          restore: steps.find((s: any) => s.name === 'restore-npm-cache').script,
+          save: steps.find((s: any) => s.name === 'save-npm-cache').script,
+        };
+      };
+
+      it('uncompressed PVC cache is portable sh — no nushell mandated', () => {
+        const { restore, save } = renderCache(cacheSpec);
+        for (const script of [restore, save]) {
+          expect(script).toContain('#!/bin/sh');
+          expect(script).not.toContain('#!/usr/bin/env nu');
+          // plugin-generated log preamble, not a hand-written one
+          expect(script).toContain("log() { printf '[%s] %s\\n' \"$(date +%H:%M:%S)\" \"$*\"; }");
+        }
+      });
+
+      it('compressed PVC cache routes through the nushell plugin preamble', () => {
+        const { restore, save } = renderCache({ ...cacheSpec, compress: true as const });
+        for (const script of [restore, save]) {
+          // single plugin-generated shebang + log def, no hand-written duplicate
+          expect(script.match(/#!\/usr\/bin\/env nu/g)).toHaveLength(1);
+          expect(script).toContain("def log [msg: string] { print $\"[(date now | format date '%H:%M:%S')] ($msg)\" }");
+        }
+        // label is supplied at the call site, not baked into a per-script def
+        expect(restore).toContain('restore-npm-cache: hit');
+        expect(save).toContain('save-npm-cache: saved');
+      });
+
+      it('GCS cache routes through the nushell plugin preamble', () => {
+        const { restore, save } = renderCache({ ...cacheSpec, backend: gcs({ bucket: 'my-bucket' }) });
+        for (const script of [restore, save]) {
+          expect(script.match(/#!\/usr\/bin\/env nu/g)).toHaveLength(1);
+          expect(script).toContain("def log [msg: string] { print $\"[(date now | format date '%H:%M:%S')] ($msg)\" }");
+        }
+        expect(restore).toContain('restore-npm-cache: checking');
+        expect(save).toContain('save-npm-cache: uploading');
+      });
+    });
+
     describe('default cache image', () => {
       it('uses DEFAULT_BASE_IMAGE when no image specified', () => {
         const app = new App();
