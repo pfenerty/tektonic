@@ -27,6 +27,13 @@ export interface GitPipelineOptions extends PipelineOptions {
      * requires all tags reachable from the target commit to generate a complete changelog.
      */
     cloneDepth?: number | 'full';
+    /**
+     * Emit Tekton Chains source-material results (`CHAINS-GIT_URL` / `CHAINS-GIT_COMMIT`)
+     * on the git-clone task, so Chains records the fetched source in build provenance.
+     * The results carry the same remote URL and full commit SHA the clone already computes
+     * and are inert when Chains is not installed. Defaults to `true`.
+     */
+    chainsProvenance?: boolean;
 }
 
 /**
@@ -78,17 +85,31 @@ export class GitPipeline extends Pipeline {
         const timestampResult   = new Result({ name: "timestamp",      description: "Author timestamp (ISO 8601)" });
         const remoteUrlResult   = new Result({ name: "remote-url",     description: "Repository remote URL" });
 
+        // Tekton Chains reads results named CHAINS-GIT_URL / CHAINS-GIT_COMMIT to record the
+        // fetched source as provenance materials. Emitted by default and inert when Chains is
+        // not installed; disable with `chainsProvenance: false`.
+        const chainsEnabled = opts.chainsProvenance ?? true;
+        const chainsGitUrl    = new Result({ name: "CHAINS-GIT_URL",    description: "Repository URL fetched (Tekton Chains provenance material)" });
+        const chainsGitCommit = new Result({ name: "CHAINS-GIT_COMMIT", description: "Commit SHA fetched (Tekton Chains provenance material)" });
+        const cloneResults = [
+            commitResult, shortShaResult, branchResult, commitMsgResult,
+            authorNameResult, authorEmailResult, timestampResult, remoteUrlResult,
+            ...(chainsEnabled ? [chainsGitUrl, chainsGitCommit] : []),
+        ];
+
         const depth = opts.cloneDepth;
         const depthArg = (depth === 'full' || depth === 0) ? '' : ` --depth=${depth ?? 1}`;
+        // Chains source-material writes (full SHA + remote URL) appended to the clone script.
+        // 24-space indentation matches the surrounding body so the sh-tag dedent strips uniformly.
+        const chainsGitWrites = chainsEnabled
+            ? `\n                        git rev-parse HEAD | tr -d '\\n' > ${chainsGitCommit.path}\n                        printf '%s' "${url}" > ${chainsGitUrl.path}`
+            : "";
 
         const cloneTask = new Task({
             name: "git-clone",
             params: [url, revision],
             workspaces: [workspace],
-            results: [
-                commitResult, shortShaResult, branchResult, commitMsgResult,
-                authorNameResult, authorEmailResult, timestampResult, remoteUrlResult,
-            ],
+            results: cloneResults,
             steps: [
                 {
                     name: "clone",
@@ -127,7 +148,7 @@ export class GitPipeline extends Pipeline {
                         git log -1 --format=%ae     | tr -d '\\n' > ${authorEmailResult.path}
                         git log -1 --format=%aI     | tr -d '\\n' > ${timestampResult.path}
                         printf '%s' "${revision}" > ${branchResult.path}
-                        printf '%s' "${url}" > ${remoteUrlResult.path}`,
+                        printf '%s' "${url}" > ${remoteUrlResult.path}${chainsGitWrites}`,
                 },
             ],
         });

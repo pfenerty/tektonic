@@ -165,8 +165,8 @@ describe('GitPipeline', () => {
     expect((test as any).stepTemplate.workingDir).toBe('/custom/path');
   });
 
-  it('cloneTask declares 8 results', () => {
-    const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
+  it('cloneTask declares 8 git-metadata results', () => {
+    const pipeline = new GitPipeline({ name: 'ci', chainsProvenance: false, tasks: [makeTask('test')] });
     expect(pipeline.cloneTask.results).toHaveLength(8);
     const names = pipeline.cloneTask.results.map(r => r.name);
     expect(names).toContain('commit');
@@ -194,8 +194,10 @@ describe('GitPipeline', () => {
     const chart = new Chart(app, 'test');
     pipeline.cloneTask.synth(chart, 'ns');
     const manifest = chart.toJson().find((m: any) => m.kind === 'Task' && m.metadata.name === 'git-clone');
-    expect(manifest.spec.results).toHaveLength(8);
+    // 8 git-metadata results + 2 Chains results (default-on).
+    expect(manifest.spec.results).toHaveLength(10);
     expect(manifest.spec.results.find((r: any) => r.name === 'commit')).toBeDefined();
+    expect(manifest.spec.results.find((r: any) => r.name === 'CHAINS-GIT_URL')).toBeDefined();
   });
 
   it('clone step script writes to result paths instead of git-metadata.json', () => {
@@ -255,6 +257,49 @@ describe('GitPipeline', () => {
     it('uses --depth=N for a positive cloneDepth number', () => {
       const pipeline = new GitPipeline({ name: 'ci', cloneDepth: 10, tasks: [makeTask('test')] });
       expect(cloneScriptBody(pipeline)).toContain('--depth=10');
+    });
+  });
+
+  describe('chainsProvenance', () => {
+    it('emits CHAINS-GIT_URL and CHAINS-GIT_COMMIT results by default', () => {
+      const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
+      expect(pipeline.cloneTask.results).toHaveLength(10);
+      const names = pipeline.cloneTask.results.map(r => r.name);
+      expect(names).toContain('CHAINS-GIT_URL');
+      expect(names).toContain('CHAINS-GIT_COMMIT');
+    });
+
+    it('omits the Chains results when chainsProvenance is false', () => {
+      const pipeline = new GitPipeline({ name: 'ci', chainsProvenance: false, tasks: [makeTask('test')] });
+      expect(pipeline.cloneTask.results).toHaveLength(8);
+      const names = pipeline.cloneTask.results.map(r => r.name);
+      expect(names).not.toContain('CHAINS-GIT_URL');
+      expect(names).not.toContain('CHAINS-GIT_COMMIT');
+    });
+
+    it('clone script writes the SHA and URL to the Chains result paths by default', () => {
+      const script = cloneScriptBody(new GitPipeline({ name: 'ci', tasks: [makeTask('test')] }));
+      expect(script).toContain('$(results.CHAINS-GIT_COMMIT.path)');
+      expect(script).toContain('$(results.CHAINS-GIT_URL.path)');
+    });
+
+    it('clone script omits the Chains writes when disabled', () => {
+      const script = cloneScriptBody(
+        new GitPipeline({ name: 'ci', chainsProvenance: false, tasks: [makeTask('test')] }),
+      );
+      expect(script).not.toContain('CHAINS-GIT');
+    });
+
+    it('Chains results render as valid Tekton results in the synthesized Task', () => {
+      const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      pipeline.cloneTask.synth(chart, 'ns');
+      const manifest = chart.toJson().find((m: any) => m.kind === 'Task' && m.metadata.name === 'git-clone');
+      const rendered = manifest.spec.steps[0].script;
+      // The appended writes share the clone step's POSIX-sh indentation (dedented uniformly).
+      expect(rendered).toContain('git rev-parse HEAD | tr -d ');
+      expect(rendered).toContain('$(results.CHAINS-GIT_COMMIT.path)');
     });
   });
 
