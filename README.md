@@ -86,6 +86,7 @@ steps: [{ name: 'fmt', image: goImage, script: scriptFromFile(path.join(__dirnam
 - [Scripting](docs/scripting.md) — language tags, `scriptFromFile`, the exit-code contract, testing
 - [Caching](docs/caching.md) — PVC & GCS caches, compression, save strategies
 - [Secrets & security](docs/secrets.md) — env/file secret injection and security defaults
+- [Tekton Chains](docs/chains.md) — automatic SLSA provenance: git source, image subjects, signing annotations
 - [Pipelines as Code](docs/pac.md) — `PACProject` and in-repo `.tekton/` pipelines
 - [Triggers](docs/triggers.md) — GitHub webhook trigger infrastructure
 - [Custom cache backends](docs/cache-backends.md) — implement the `CacheBackend` interface
