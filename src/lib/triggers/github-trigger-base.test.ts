@@ -65,4 +65,21 @@ describe('GitHubTriggerBase', () => {
       expect(workspaces[0].volumeClaimTemplate.spec.resources.requests.storage).toBe('1Gi');
     });
   });
+
+  describe('pipelineRunAnnotations', () => {
+    const getPipelineRun = (props: object) =>
+      getTriggerTemplate(props).spec.resourcetemplates[0];
+
+    it('merges pipelineRunAnnotations into the PipelineRun template metadata', () => {
+      const pr = getPipelineRun({
+        pipelineRunAnnotations: { 'chains.tekton.dev/transparency-upload': 'true' },
+      });
+      expect(pr.metadata.annotations['chains.tekton.dev/transparency-upload']).toBe('true');
+    });
+
+    it('omits annotations when none provided', () => {
+      const pr = getPipelineRun({});
+      expect(pr.metadata.annotations).toBeUndefined();
+    });
+  });
 });

@@ -1390,4 +1390,29 @@ describe('Task', () => {
       expect(user.onError).toBe('stopAndFail');
     });
   });
+
+  describe('annotations', () => {
+    const synthTask = (t: Task) => {
+      const app = new App();
+      const chart = new Chart(app, 'c');
+      t.synth(chart, 'ns');
+      return chart.toJson().find((m: any) => m.kind === 'Task');
+    };
+
+    it('sets annotations on the Task metadata', () => {
+      const t = new Task({
+        name: 'annotated',
+        annotations: { 'chains.tekton.dev/transparency-upload': 'true' },
+        steps: [{ name: 's', image: 'alpine' }],
+      });
+      expect(synthTask(t).metadata.annotations).toEqual({
+        'chains.tekton.dev/transparency-upload': 'true',
+      });
+    });
+
+    it('omits annotations when none provided', () => {
+      const t = new Task({ name: 'plain', steps: [{ name: 's', image: 'alpine' }] });
+      expect(synthTask(t).metadata.annotations).toBeUndefined();
+    });
+  });
 });
