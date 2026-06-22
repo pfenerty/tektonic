@@ -6,8 +6,9 @@ A complete reference for agents creating Tekton CI/CD pipelines with this librar
 
 - **`Param` / `Workspace`** are named handles. Use them in template literals (`${param}`, `${workspace.path}`) to produce Tekton interpolation expressions (`$(params.name)`, `$(workspaces.name.path)`).
 - **`Task`** maps to one Tekton Task: a list of steps, optional params/workspaces, optional caches, and an optional status reporter.
+- **Step scripts** are typed: author them with the `sh`/`bash`/`nu`/`py` tagged templates or load a real file with `scriptFromFile`. The framework owns the exit-code/status plumbing. See [scripting.md](scripting.md).
 - **`GitPipeline`** wires tasks together: it auto-creates a `git-clone` step, threads the shared workspace through every task, and walks the `needs` graph to set `runAfter`. `TRIGGER_EVENTS` controls which GitHub events fire it.
-- **`TektonProject`** is the synthesizer. Calling `new TektonProject(...)` writes all Kubernetes manifests (Tasks, Pipeline, RBAC, EventListener, TriggerBindings/Templates, PVCs) to `outdir`.
+- **`TektonProject`** is the synthesizer for cluster-deployed pipelines + triggers. Calling `new TektonProject(...)` writes all Kubernetes manifests (Tasks, Pipeline, RBAC, EventListener, TriggerBindings/Templates, PVCs) to `outdir`. **`PACProject`** is the alternative synthesizer for [Pipelines as Code](pac.md) (in-repo `.tekton/` PipelineRun templates).
 
 ## Installation
 
@@ -30,6 +31,7 @@ import {
   GitPipeline,
   TektonProject,
   TRIGGER_EVENTS,
+  sh,
 } from '@pfenerty/tektonic';
 
 // One task: run tests
@@ -38,9 +40,8 @@ const test = new Task({
   steps: [{
     name: 'test',
     image: 'node:22-alpine',
-    // workingDir defaults to the shared workspace path
-    workingDir: '$(workspaces.workspace.path)',
-    script: '#!/bin/sh\nnpm ci && npm test',
+    // workingDir defaults to the shared workspace path (set by GitPipeline)
+    script: sh`npm ci && npm test`,
   }],
 });
 
@@ -126,8 +127,7 @@ const task = new Task({
     {
       name: 'build',
       image: 'golang:1.22-alpine',
-      workingDir: '$(workspaces.workspace.path)',
-      script: '#!/bin/sh\ngo build ./...',
+      script: sh`go build ./...`,   // or scriptFromFile(...) — see scripting.md
       env: [
         { name: 'GOOS', value: 'linux' },
         // Secret reference:
@@ -138,6 +138,8 @@ const task = new Task({
         requests: { cpu: '500m', memory: '1Gi' },
         limits: { memory: '2Gi' },
       },
+      // volumeMounts: mount a task `volumes` entry (e.g. a secret) into the step
+      // volumeMounts: [{ name: 'docker-config', mountPath: '/cfg', readOnly: true }],
     },
   ],
 });
@@ -158,6 +160,8 @@ const pipeline = new GitPipeline({
   triggers: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST],
   tasks: [testTask, buildTask, scanTask],  // order doesn't matter; needs drives sequencing
   cloneImage: 'ghcr.io/myorg/git:latest', // optional: override default clone image
+  cloneDepth: 'full',                      // optional: full history (default 1 = shallow);
+                                           // use 'full' when steps need tag history (e.g. changelogs)
 });
 ```
 
@@ -222,6 +226,14 @@ new TektonProject({
 - RBAC (`ServiceAccount`, `ClusterRole`, `ClusterRoleBinding`)
 - `PersistentVolumeClaim` for each `caches` entry (not for GCS backends)
 - `kustomization.yaml` listing all manifests
+
+## PACProject
+
+If your cluster runs [Pipelines as Code](https://pipelinesascode.tekton.dev/), use `PACProject`
+instead of `TektonProject`. It emits in-repo `.tekton/` PipelineRun templates (read from the
+pushed commit) and per-task files, binding well-known params (`url`, `revision`,
+`repo-full-name`, `source-branch`) to PAC `{{ }}` variables — no EventListener or RBAC needed.
+The pipeline/task model is identical; only the synthesizer changes. See [pac.md](pac.md).
 
 ## Caching
 
@@ -529,6 +541,10 @@ The following is the actual self-CI pipeline for this repository. It shows:
 - SARIF upload to GitHub Advanced Security
 - Multiple pipelines (push vs. pull request) sharing tasks
 
+> The scripts below use the legacy raw-shebang form with manual exit-code plumbing. New code
+> should use the [script API](scripting.md) (`sh`/`nu`/`scriptFromFile`), which captures exit
+> codes automatically — see the note above.
+
 ```typescript
 import {
     Param,
@@ -667,10 +683,25 @@ new TektonProject({
 
 ## Status Reporter Exit Code Convention
 
-When using `GitHubStatusReporter` with `onError: 'continue'`, the reporter reads `/tekton/home/.exit-code` to determine success/failure. Write the actual exit code there before exiting:
+The reporter reads `/tekton/home/.exit-code` (exported as `EXIT_CODE_PATH`) to determine
+success/failure, since reporting tasks run their work steps with `onError: 'continue'` so the
+reporting step always runs.
+
+**With the script API this is fully automatic.** When a task has a `statusReporter` and a
+`statusContext`, the framework sets `onError: 'continue'` and wraps each tagged/`scriptFromFile`/
+object script so it captures the worst exit code to `EXIT_CODE_PATH` and re-exits. Write the body
+as if it runs normally — no manual plumbing:
+
+```typescript
+script: sh`npm ci && npm test`   // exit-code capture injected at synth time
+```
+
+**Legacy raw-shebang strings are passed through unchanged**, so they bypass the automatic
+capture. If you still author steps as raw `#!/bin/sh` strings with a status reporter, keep the
+manual convention:
 
 ```sh
 my-command; EC=$?; echo $EC > /tekton/home/.exit-code; exit $EC
 ```
 
-This lets the pipeline continue (for SARIF upload etc.) while still reporting the correct status.
+Prefer the script API (see [scripting.md](scripting.md)) to avoid this entirely.
