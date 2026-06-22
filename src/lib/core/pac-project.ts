@@ -96,6 +96,12 @@ export interface PACProjectOptions {
    * ```
    */
   podTemplateEnv?: Array<{ name: string; value?: string; valueFrom?: Record<string, unknown> }>;
+  /**
+   * Annotations merged into every generated PipelineRun's metadata, alongside the
+   * PAC annotations. Use for Tekton Chains controls such as
+   * `chains.tekton.dev/transparency-upload`.
+   */
+  pipelineRunAnnotations?: Record<string, string>;
 }
 
 /**
@@ -230,6 +236,7 @@ export class PACProject {
             'pipelinesascode.tekton.dev/on-target-branch': onTargetBranch,
             ...(taskAnnotation ? { 'pipelinesascode.tekton.dev/task': taskAnnotation } : {}),
             'pipelinesascode.tekton.dev/max-keep-runs': String(maxKeepRuns),
+            ...(opts.pipelineRunAnnotations ?? {}),
           },
         },
         spec: {

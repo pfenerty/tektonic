@@ -39,6 +39,11 @@ export interface GitHubTriggerBaseProps {
      * `defaultPodSecurityContext` option.
      */
     defaultPodSecurityContext?: Record<string, unknown>;
+    /**
+     * Annotations merged into the generated PipelineRun template's metadata.
+     * Supplied by `TektonInfraChart` from the project's `pipelineRunAnnotations`.
+     */
+    pipelineRunAnnotations?: Record<string, string>;
 }
 
 /** Event-specific configuration provided by trigger subclasses. */
@@ -147,6 +152,9 @@ export class GitHubTriggerBase extends Construct {
                         metadata: {
                             generateName: `${p}${config.pipelineRunGenerateName}`,
                             namespace: "$(tt.params.namespace)",
+                            ...(props.pipelineRunAnnotations && {
+                                annotations: props.pipelineRunAnnotations,
+                            }),
                         },
                         spec: {
                             pipelineRef: { name: props.pipelineRef },

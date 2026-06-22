@@ -182,6 +182,25 @@ describe('PACProject', () => {
     const param = pipelineRun?.spec?.params?.find((p: any) => p.name === 'source-branch');
     expect(param?.value).toBe('{{ source_branch }}');
   });
+
+  it('merges pipelineRunAnnotations into the PipelineRun metadata alongside PAC annotations', () => {
+    const pipeline = new GitPipeline({
+      name: 'push',
+      triggers: [TRIGGER_EVENTS.PUSH],
+      tasks: [buildTask],
+    });
+    new PACProject({
+      namespace: 'ci',
+      pipelines: [pipeline],
+      pipelineRunAnnotations: { 'chains.tekton.dev/transparency-upload': 'true' },
+    });
+
+    const allObjects = capturedCharts.flatMap((c: any) => c.toJson());
+    const pipelineRun = allObjects.find((o: any) => o.kind === 'PipelineRun');
+    expect(pipelineRun.metadata.annotations['chains.tekton.dev/transparency-upload']).toBe('true');
+    // PAC annotations are preserved.
+    expect(pipelineRun.metadata.annotations['pipelinesascode.tekton.dev/on-event']).toBeDefined();
+  });
 });
 
 describe('Pipeline.onTargetBranch', () => {

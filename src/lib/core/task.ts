@@ -275,6 +275,11 @@ export interface TaskOptions {
      * ignore this. Falls back to the project-level default when unset.
      */
     defaultLanguage?: LanguageName;
+    /**
+     * Annotations to set on the generated Task's metadata. A generic escape hatch
+     * for ecosystem integrations — e.g. `chains.tekton.dev/*` for Tekton Chains.
+     */
+    annotations?: Record<string, string>;
 }
 
 /**
@@ -311,6 +316,8 @@ export class TaskDef implements TaskLike {
     readonly volumes: TaskVolumeSpec[];
     /** Default scripting language for bare-body steps; falls back to the project default. */
     readonly defaultLanguage?: LanguageName;
+    /** Annotations set on the generated Task metadata. */
+    readonly annotations?: Record<string, string>;
 
     constructor(opts: TaskOptions) {
         this.name = opts.name;
@@ -342,6 +349,7 @@ export class TaskDef implements TaskLike {
         this.sidecars = opts.sidecars ?? [];
         this.volumes = opts.volumes ?? [];
         this.defaultLanguage = opts.defaultLanguage;
+        this.annotations = opts.annotations;
     }
 
     /**
@@ -413,7 +421,11 @@ export class TaskDef implements TaskLike {
         new ApiObject(scope, this.name, {
             apiVersion: TEKTON_API_V1,
             kind: "Task",
-            metadata: { name: resourceName, namespace },
+            metadata: {
+                name: resourceName,
+                namespace,
+                ...(this.annotations && { annotations: this.annotations }),
+            },
             spec: {
                 stepTemplate: {
                     securityContext: baseStepSecContext,

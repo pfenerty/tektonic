@@ -38,6 +38,7 @@ export class GitHubVcsProvider implements VcsProvider {
       workspaceAccessModes: ctx.workspaceAccessModes,
       cacheWorkspaces: ctx.cacheWorkspaces,
       defaultPodSecurityContext: ctx.defaultPodSecurityContext,
+      pipelineRunAnnotations: ctx.pipelineRunAnnotations,
     };
 
     const secretInterceptorParam = ctx.webhookSecretRef
