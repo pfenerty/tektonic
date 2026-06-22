@@ -7,6 +7,8 @@ export { Task, TaskDef } from "./lib/core/task";
 export type { TaskLike, TaskOptions, TaskStepSpec, TaskCacheSpec, TaskSidecarSpec, TaskVolumeSpec } from "./lib/core/task";
 export { Result } from "./lib/core/result";
 export type { ResultOptions } from "./lib/core/result";
+export { ChainsImage } from "./lib/core/chains-image";
+export type { ChainsImageOptions } from "./lib/core/chains-image";
 export { HubTaskRef } from "./lib/core/hub-task-ref";
 export type { HubTaskRefOptions } from "./lib/core/hub-task-ref";
 export type { CacheBackend, BackendCtx } from "./lib/core/cache-backend";
