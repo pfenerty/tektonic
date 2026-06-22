@@ -4,6 +4,7 @@ import { Task, TaskLike } from "./task";
 import { Result } from "./result";
 import { Pipeline, PipelineOptions } from "./pipeline";
 import { DEFAULT_BASE_IMAGE } from "../constants";
+import { sh } from "../script";
 
 /** Options for constructing a {@link GitPipeline}. */
 export interface GitPipelineOptions extends PipelineOptions {
@@ -99,35 +100,34 @@ export class GitPipeline extends Pipeline {
                             value: `${workspace.path}/.gitconfig`,
                         },
                     ],
-                    script: `#!/usr/bin/env nu
-# Mark workspace as safe before any git operations that check directory ownership.
-# The workspace dir may be owned by root (local-path provisioner) while the pod
-# runs as a non-root uid; git 2.35.2+ rejects such repos without this config.
-git config --global --add safe.directory ${workspace.path}
-git init -b main .
-git remote add origin ${url}
-# Fetch only the target branch. GitHub doesn't allow fetching by arbitrary SHA,
-# but the revision is always a branch tip in CI (push/PR events). Fetching a
-# single branch avoids wildcard-refspec pack issues in newer git versions.
-git fetch${depthArg} origin ${revision}
-git checkout -b ${revision} FETCH_HEAD
+                    // Portable POSIX sh — the git-clone step mandates no nushell, only
+                    // `git` and a `/bin/sh`. Git output is piped through `tr -d '\\n'`
+                    // to strip the trailing newline (matching the previous nushell
+                    // `str trim`); shell `$(...)` command substitution is deliberately
+                    // avoided so it can't collide with Tekton's own `$(...)` variables.
+                    script: sh`
+                        set -e
+                        # Mark workspace as safe before any git operations that check directory ownership.
+                        # The workspace dir may be owned by root (local-path provisioner) while the pod
+                        # runs as a non-root uid; git 2.35.2+ rejects such repos without this config.
+                        git config --global --add safe.directory ${workspace.path}
+                        git init -b main .
+                        git remote add origin ${url}
+                        # Fetch only the target branch. GitHub doesn't allow fetching by arbitrary SHA,
+                        # but the revision is always a branch tip in CI (push/PR events). Fetching a
+                        # single branch avoids wildcard-refspec pack issues in newer git versions.
+                        git fetch${depthArg} origin ${revision}
+                        git checkout -b ${revision} FETCH_HEAD
 
-# Write git metadata as Tekton results for downstream tasks.
-let sha = (git rev-parse HEAD | str trim)
-let short_sha = (git rev-parse --short HEAD | str trim)
-let commit_message = (git log -1 --format=%s | str trim)
-let author_name = (git log -1 --format=%an | str trim)
-let author_email = (git log -1 --format=%ae | str trim)
-let timestamp = (git log -1 --format=%aI | str trim)
-
-$sha            | save -f ${commitResult.path}
-$short_sha      | save -f ${shortShaResult.path}
-"${revision}"   | save -f ${branchResult.path}
-$commit_message | save -f ${commitMsgResult.path}
-$author_name    | save -f ${authorNameResult.path}
-$author_email   | save -f ${authorEmailResult.path}
-$timestamp      | save -f ${timestampResult.path}
-"${url}"        | save -f ${remoteUrlResult.path}`,
+                        # Write git metadata as Tekton results for downstream tasks.
+                        git rev-parse HEAD          | tr -d '\\n' > ${commitResult.path}
+                        git rev-parse --short HEAD  | tr -d '\\n' > ${shortShaResult.path}
+                        git log -1 --format=%s      | tr -d '\\n' > ${commitMsgResult.path}
+                        git log -1 --format=%an     | tr -d '\\n' > ${authorNameResult.path}
+                        git log -1 --format=%ae     | tr -d '\\n' > ${authorEmailResult.path}
+                        git log -1 --format=%aI     | tr -d '\\n' > ${timestampResult.path}
+                        printf '%s' "${revision}" > ${branchResult.path}
+                        printf '%s' "${url}" > ${remoteUrlResult.path}`,
                 },
             ],
         });

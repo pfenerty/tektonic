@@ -5,12 +5,20 @@ import { Task, TaskLike } from './task';
 import { Param } from './param';
 import { Workspace } from './workspace';
 import { TRIGGER_EVENTS } from './trigger-events';
+import { Script } from '../script';
 
 describe('GitPipeline', () => {
   const buildPathParam = new Param({ name: 'build-path', default: './' });
 
   const makeTask = (name: string, needs: Task[] = []) =>
     new Task({ name, needs, steps: [{ name: 'run', image: 'alpine' }] });
+
+  // The clone step's `script` is an unrendered Script (rendered to a string only
+  // at synth time); read its body for content assertions.
+  const cloneScriptBody = (pipeline: GitPipeline): string => {
+    const s = pipeline.cloneTask.steps[0].script;
+    return s instanceof Script ? s.body : String(s);
+  };
 
   it('auto-creates a git-clone task', () => {
     const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
@@ -192,10 +200,23 @@ describe('GitPipeline', () => {
 
   it('clone step script writes to result paths instead of git-metadata.json', () => {
     const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
-    const script = pipeline.cloneTask.steps[0].script!;
+    const script = cloneScriptBody(pipeline);
     expect(script).toContain('$(results.commit.path)');
     expect(script).toContain('$(results.short-sha.path)');
     expect(script).not.toContain('git-metadata.json');
+  });
+
+  it('clone step is portable POSIX sh — mandates no nushell', () => {
+    const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline.cloneTask.synth(chart, 'ns');
+    const manifest = chart.toJson().find((m: any) => m.kind === 'Task' && m.metadata.name === 'git-clone');
+    const rendered = manifest.spec.steps[0].script;
+    expect(rendered).toContain('#!/bin/sh');
+    expect(rendered).not.toContain('#!/usr/bin/env nu');
+    expect(rendered).not.toContain('str trim');
+    expect(rendered).not.toContain('save -f');
   });
 
   it('does not throw or mutate a non-synthesizable TaskLike', () => {
@@ -218,22 +239,22 @@ describe('GitPipeline', () => {
   describe('cloneDepth', () => {
     it('uses --depth=1 by default', () => {
       const pipeline = new GitPipeline({ name: 'ci', tasks: [makeTask('test')] });
-      expect(pipeline.cloneTask.steps[0].script).toContain('--depth=1');
+      expect(cloneScriptBody(pipeline)).toContain('--depth=1');
     });
 
     it('omits --depth when cloneDepth is "full"', () => {
       const pipeline = new GitPipeline({ name: 'ci', cloneDepth: 'full', tasks: [makeTask('test')] });
-      expect(pipeline.cloneTask.steps[0].script).not.toContain('--depth=');
+      expect(cloneScriptBody(pipeline)).not.toContain('--depth=');
     });
 
     it('omits --depth when cloneDepth is 0', () => {
       const pipeline = new GitPipeline({ name: 'ci', cloneDepth: 0, tasks: [makeTask('test')] });
-      expect(pipeline.cloneTask.steps[0].script).not.toContain('--depth=');
+      expect(cloneScriptBody(pipeline)).not.toContain('--depth=');
     });
 
     it('uses --depth=N for a positive cloneDepth number', () => {
       const pipeline = new GitPipeline({ name: 'ci', cloneDepth: 10, tasks: [makeTask('test')] });
-      expect(pipeline.cloneTask.steps[0].script).toContain('--depth=10');
+      expect(cloneScriptBody(pipeline)).toContain('--depth=10');
     });
   });
 

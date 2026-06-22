@@ -53,8 +53,16 @@ export const RESTRICTED_STEP_SECURITY_CONTEXT = {
 
 /**
  * Default container image for injected steps (cache restore/save, status
- * reporting, git clone). Provides nushell, zstd, tar, curl, git, and
- * other CI/CD tooling out of the box.
+ * reporting, git clone).
+ *
+ * This is a **runtime interpreter expectation, not a module tektonic ships**:
+ * the library generates each injected script's interpreter preamble at synth
+ * time via the {@link ScriptLanguage} plugins, and the image is only expected
+ * to *provide* the interpreters and CLIs those scripts invoke. Concretely the
+ * default image must offer `/bin/sh` + `git` (git-clone), `nushell` + `zstd` +
+ * `tar` (compressed cache, status reporting via `http post`); the uncompressed
+ * cache path needs only `/bin/sh`. Swap in any image that satisfies the subset
+ * your pipeline actually uses.
  */
 export const DEFAULT_BASE_IMAGE =
     "ghcr.io/pfenerty/apko-cicd/base:stable" as const;
