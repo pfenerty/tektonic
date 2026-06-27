@@ -114,9 +114,27 @@ definition:
   storage backend (OCI/GCS/Grafeas/Archivista), payload format (in-toto/SLSA), and transparency
   (Rekor) settings.
 - The signing key secret.
+- **Registry push credentials for OCI storage.** With `artifacts.oci.storage: oci`, Chains
+  attaches signatures and attestations to your images in the registry. It authenticates as the
+  **TaskRun's ServiceAccount** — i.e. the SA your run executes under (`PACProject` /
+  `TektonProject` `serviceAccountName`, default `default`), *not* the Chains controller's SA.
+  Link a registry-push secret to that SA in your cluster GitOps, e.g.:
 
-See the [Chains configuration docs](https://tekton.dev/docs/chains/config/). Once that is in
-place, pipelines authored with the conventions above are signed and attested automatically.
+  ```yaml
+  apiVersion: v1
+  kind: ServiceAccount
+  metadata: { name: default, namespace: my-ci }
+  secrets:                       # what Chains reads to authenticate the push
+    - name: registry-docker-config
+  ```
+
+  Tektonic only *references* the SA by name; create the SA and link its credentials in your
+  platform layer. Without this, signing still succeeds (tekton storage + Rekor) but OCI pushes
+  fail with `UNAUTHORIZED`.
+
+See the [Chains configuration docs](https://tekton.dev/docs/chains/config/) and
+[authenticating to an OCI registry](https://tekton.dev/docs/chains/authentication/). Once that
+is in place, pipelines authored with the conventions above are signed and attested automatically.
 
 ## How the pieces map to Chains
 
