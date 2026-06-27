@@ -80,7 +80,7 @@ export class Pipeline {
     if (statusTasks.length > 0) {
       const reporter = statusTasks[0].statusReporter!;
       const contexts = statusTasks.map(t => t.statusContext!);
-      this._pendingTask = reporter.createPendingTask(contexts);
+      this._pendingTask = reporter.createPendingTask(contexts, `set-status-pending-${this.name}`);
       this.allTasks = [this._pendingTask, ...regularTasks];
     } else {
       this.allTasks = regularTasks;

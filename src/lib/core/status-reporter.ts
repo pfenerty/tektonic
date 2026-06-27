@@ -13,8 +13,12 @@ export interface StatusReporter {
   /**
    * Creates a Task that sets all given contexts to "pending".
    * This task should run before any other task in the pipeline.
+   *
+   * `name` lets the caller scope the task name per pipeline, so multi-pipeline
+   * projects (e.g. PACProject emitting one file per unique task name) don't
+   * collide on a single shared `set-status-pending` task.
    */
-  createPendingTask(contexts: string[]): Task;
+  createPendingTask(contexts: string[], name?: string): Task;
 
   /**
    * Returns a step that reports the final status of the given context.
