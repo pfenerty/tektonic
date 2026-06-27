@@ -241,6 +241,7 @@ export class PACProject {
         },
         spec: {
           pipelineSpec,
+          ...(pipeline.timeout ? { timeouts: { pipeline: pipeline.timeout } } : {}),
           params: pipelineRunParams,
           taskRunTemplate: {
             serviceAccountName,
