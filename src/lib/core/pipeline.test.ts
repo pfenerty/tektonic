@@ -198,9 +198,27 @@ describe('Pipeline', () => {
     const lintSpec = manifest.spec.tasks.find((t: any) => t.name === 'lint');
     // lint has no statusReporter — must not depend on set-status-pending
     expect(lintSpec.runAfter).toBeUndefined();
-    // reporting task should depend on set-status-pending
+    // reporting task should depend on the pipeline-scoped pending task
     const testSpec = manifest.spec.tasks.find((t: any) => t.name === 'test');
-    expect(testSpec.runAfter).toContain('set-status-pending');
+    expect(testSpec.runAfter).toContain('set-status-pending-ci');
+  });
+
+  it('pending task name is scoped per pipeline so multi-pipeline projects do not collide', () => {
+    const reporter = new GitHubStatusReporter();
+    const mk = (name: string) =>
+      new Task({ name, statusReporter: reporter, steps: [{ name: 's', image: 'alpine', onError: 'continue' }] });
+    // Distinct task instances per pipeline (shared instances can't span pipelines via needs).
+    const push = new Pipeline({ name: 'push', tasks: [mk('build'), mk('publish')] });
+    const pr = new Pipeline({ name: 'pull-request', tasks: [mk('build')] });
+    const nameOf = (p: Pipeline) => {
+      const app = new App();
+      const chart = new Chart(app, p.name);
+      p._build(chart, 'pipeline', 'ns');
+      return chart.toJson()[0].spec.tasks.map((t: any) => t.name).find((n: string) => n.startsWith('set-status-pending'));
+    };
+    expect(nameOf(push)).toBe('set-status-pending-push');
+    expect(nameOf(pr)).toBe('set-status-pending-pull-request');
+    expect(nameOf(push)).not.toBe(nameOf(pr));
   });
 
   it('_build() omits finally when no finally tasks', () => {
