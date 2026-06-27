@@ -201,6 +201,25 @@ describe('PACProject', () => {
     // PAC annotations are preserved.
     expect(pipelineRun.metadata.annotations['pipelinesascode.tekton.dev/on-event']).toBeDefined();
   });
+
+  it('emits spec.timeouts.pipeline when the pipeline sets a timeout', () => {
+    const pipeline = new GitPipeline({
+      name: 'push',
+      triggers: [TRIGGER_EVENTS.PUSH],
+      timeout: '2h',
+      tasks: [buildTask],
+    });
+    new PACProject({ namespace: 'ci', pipelines: [pipeline] });
+    const pipelineRun = capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'PipelineRun');
+    expect(pipelineRun.spec.timeouts).toEqual({ pipeline: '2h' });
+  });
+
+  it('omits spec.timeouts when no timeout is set', () => {
+    const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
+    new PACProject({ namespace: 'ci', pipelines: [pipeline] });
+    const pipelineRun = capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'PipelineRun');
+    expect(pipelineRun.spec.timeouts).toBeUndefined();
+  });
 });
 
 describe('Pipeline.onTargetBranch', () => {

@@ -28,6 +28,12 @@ export interface PipelineOptions {
    * Ignored for `TRIGGER_EVENTS.TAG` pipelines, which always target `"refs/tags/*"`.
    */
   onTargetBranch?: string;
+  /**
+   * Overall PipelineRun timeout as a Go duration string (e.g. `"2h"`, `"90m"`).
+   * Emitted by {@link PACProject} as `spec.timeouts.pipeline`. When unset, Tekton's
+   * default (1h) applies — raise it for long pipelines (e.g. many image builds).
+   */
+  timeout?: string;
 }
 
 /**
@@ -52,6 +58,8 @@ export class Pipeline {
    * Defaults to `"*"`. Ignored for TAG pipelines, which always use `"refs/tags/*"`.
    */
   readonly onTargetBranch: string;
+  /** Overall PipelineRun timeout (Go duration), emitted by PACProject. Unset = Tekton default. */
+  readonly timeout?: string;
   private readonly extraParams: Param[];
   /** @internal Auto-generated task that sets all status contexts to pending at pipeline start. */
   protected readonly _pendingTask?: TaskDef;
@@ -70,6 +78,7 @@ export class Pipeline {
     this.tasks = opts.tasks;
     this.finallyTasks = opts.finallyTasks ?? [];
     this.onTargetBranch = opts.onTargetBranch ?? '*';
+    this.timeout = opts.timeout;
     this.extraParams = opts.params ?? [];
 
     const regularTasks = this.discoverAllTasks(opts.tasks);
