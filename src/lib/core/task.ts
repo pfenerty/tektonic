@@ -155,6 +155,16 @@ export interface TaskCacheSpec {
      * `true` for GCS backends (robust environments).
      */
     multiThreadCompression?: boolean;
+    /**
+     * Skip cache restore if any of the cache paths already exist in the working
+     * directory. Useful when a prior task in the same pipeline run has already
+     * populated the paths on the shared workspace PVC — re-extracting the archive
+     * would discard that work.
+     *
+     * The hash is still computed and saved so the save step can update the archive.
+     * Defaults to `false`.
+     */
+    skipRestoreIfPathsExist?: boolean;
 }
 
 /**

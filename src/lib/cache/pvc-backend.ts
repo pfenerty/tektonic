@@ -54,18 +54,27 @@ export class PvcBackend implements CacheBackend {
         const hashFile = this._hashFilePath(c, taskName);
         const flag = threadFlag(c);
         const label = `restore-${c.name}-cache`;
+        const skipIfExists = c.skipRestoreIfPathsExist ?? false;
 
         if (c.compress) {
             const expr = hashExpr(c);
+            const pathList = c.paths.map((p) => `"${p}"`).join(", ");
+            const skipGuard = skipIfExists
+                ? `if ([${pathList}] | any { |p| $p | path exists }) {
+  log $"${label}: paths already exist, skipping restore ($hash)"
+  exit 0
+}
+`
+                : "";
             return cacheScript(
                 `${expr}
 $hash | save -f ${hashFile}
-let archive = $"${wsPath}/($hash).tar.zst"
+${skipGuard}let archive = $"${wsPath}/($hash).tar.zst"
 
 if ($archive | path exists) {
   let archive_size = (ls $archive | get size.0)
   log $"${label}: hit ($hash) size=($archive_size)"
-  let cache_paths = [${c.paths.map((p) => `"${p}"`).join(", ")}]
+  let cache_paths = [${pathList}]
   for p in $cache_paths {
     if ($p | path exists) { ^chmod -R u+w $p; rm -rf $p }
   }
@@ -88,11 +97,21 @@ if ($archive | path exists) {
             c.key.length === 0
                 ? `HASH=$(echo -n "" | sha256sum | cut -c1-16)`
                 : `HASH=$(cat ${keyFiles} | sha256sum | cut -c1-16)`;
+        const skipGuardSh = skipIfExists
+            ? c.paths.map((p) => `[ -e "./${p}" ]`).join(" || ")
+            : "";
+        const skipCheckSh = skipIfExists
+            ? `if ${skipGuardSh}; then
+  log "${label}: paths already exist, skipping restore \$HASH"
+  exit 0
+fi
+`
+            : "";
         return cacheScript(
             `set -e
 ${hashCmd}
 echo "$HASH" > ${hashFile}
-CACHE_DIR="${wsPath}/$HASH"
+${skipCheckSh}CACHE_DIR="${wsPath}/$HASH"
 if [ -d "$CACHE_DIR" ]; then
   log "${label}: hit $HASH"
 ${copyPaths}

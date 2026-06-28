@@ -702,6 +702,53 @@ describe('Task', () => {
       });
     });
 
+    describe('skipRestoreIfPathsExist', () => {
+      it('compressed restore has no skip guard by default', () => {
+        const app = new App();
+        const chart = new Chart(app, 'test');
+        const t = new Task({
+          name: 'c',
+          steps: [{ name: 's', image: 'alpine' }],
+          caches: [{ ...cacheSpec, compress: true }],
+        });
+        t.synth(chart, 'ns');
+        const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
+        expect(restore.script).not.toContain('paths already exist');
+      });
+
+      it('compressed restore skips when paths exist', () => {
+        const app = new App();
+        const chart = new Chart(app, 'test');
+        const t = new Task({
+          name: 'c',
+          steps: [{ name: 's', image: 'alpine' }],
+          caches: [{ ...cacheSpec, compress: true, skipRestoreIfPathsExist: true }],
+        });
+        t.synth(chart, 'ns');
+        const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
+        expect(restore.script).toContain('paths already exist, skipping restore');
+        expect(restore.script).toContain('path exists');
+        // hash is still saved so the save step can update the archive
+        expect(restore.script).toContain('save -f');
+        // restore body is still present (for the miss path)
+        expect(restore.script).toContain('zstd -d');
+      });
+
+      it('uncompressed restore skips when paths exist', () => {
+        const app = new App();
+        const chart = new Chart(app, 'test');
+        const t = new Task({
+          name: 'c',
+          steps: [{ name: 's', image: 'alpine' }],
+          caches: [{ ...cacheSpec, skipRestoreIfPathsExist: true }],
+        });
+        t.synth(chart, 'ns');
+        const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
+        expect(restore.script).toContain('paths already exist, skipping restore');
+        expect(restore.script).toContain('-e "./node_modules"');
+      });
+    });
+
     describe('empty key (static hash)', () => {
       it('compressed restore uses static hash when key is empty', () => {
         const app = new App();
