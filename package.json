@@ -35,14 +35,12 @@
   },
   "peerDependencies": {},
   "dependencies": {
-    "cdk8s": ">=2.0.0",
-    "constructs": ">=10.0.0"
+    "cdk8s": "^2.68.0",
+    "constructs": "^10.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
-    "cdk8s": "^2.68.0",
     "cdk8s-cli": "^2.198.0",
-    "constructs": "^10.3.0",
     "ts-node": "^10.9.0",
     "typescript": "^7.0.0",
     "vitest": "^4.0.0",
