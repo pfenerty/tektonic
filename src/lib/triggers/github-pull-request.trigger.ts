@@ -13,6 +13,10 @@ export class GitHubPullRequestTrigger extends GitHubTriggerBase {
       pipelineRunGenerateName: 'github-pull-request-pipeline-run-',
       gitRevisionValue: '$(body.pull_request.head.sha)',
       gitRefValue: '$(body.pull_request.head.ref)',
+      // head.ref is already the bare branch name.
+      branchValue: '$(body.pull_request.head.ref)',
+      // Diff against the PR target branch tip.
+      diffBaseValue: '$(body.pull_request.base.sha)',
     });
   }
 }

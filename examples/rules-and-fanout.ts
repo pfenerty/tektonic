@@ -17,6 +17,8 @@ import {
     TRIGGER_EVENTS,
     onBranch,
     onBranchMatching,
+    onChanges,
+    or,
     sh,
 } from "../src";
 
@@ -26,6 +28,14 @@ const nodeImage = "node:22-alpine";
 const lint = new Task({
     name: "lint",
     steps: [{ name: "lint", image: nodeImage, script: sh`npm ci && npm run lint` }],
+});
+
+// Compound rule: always on main / merges to main; on feature branches only when the
+// app source or dependencies actually changed (a detection task is auto-wired in).
+const integration = new Task({
+    name: "integration",
+    when: or(onBranch("main"), onChanges(["src/**", "package.json"])),
+    steps: [{ name: "integration", image: nodeImage, script: sh`npm ci && npm run test:integration` }],
 });
 
 // Rule as a job attribute: full suite only on main or release/* (branch pattern → CEL guard).
@@ -38,7 +48,7 @@ const test = new Task({
 // Parse step: emit which services changed as a runtime array result (e.g. ["api","web"]).
 const changed = new Result({ name: "changed-services", type: "array" });
 const detect = new Task({
-    name: "detect-changes",
+    name: "detect-services",
     results: [changed],
     steps: [
         {
@@ -67,8 +77,8 @@ new TektonProject({
     pipelines: [
         new GitPipeline({
             name: "ci",
-            triggers: [TRIGGER_EVENTS.PUSH],
-            tasks: [lint, test, detect, deploy], // clean list — rules/fan-out are on the jobs
+            triggers: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST],
+            tasks: [lint, test, integration, detect, deploy], // clean list — rules/fan-out are on the jobs
         }),
     ],
 });

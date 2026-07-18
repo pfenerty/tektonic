@@ -442,8 +442,46 @@ const deploy = new Task({
 | `or(...)` | logical OR | single CEL guard |
 | `not(c)` | negation | flips `in`↔`notin`, else CEL |
 
-`onBranch*` reference `GitPipeline`'s `git-clone` `branch` result. For a plain `Pipeline` or a
-custom clone, pass your own `Result` to `equals`/`matches`.
+`onBranch*` reference the normalized `source-branch` pipeline param (e.g. `main`). Both
+synthesizers plumb it automatically: `TektonProject` via the GitHub triggers (stripping
+`refs/heads/` on push, using the PR head branch on pull requests) and `PACProject` via
+`{{ source_branch }}`. For a plain `Pipeline` with no triggers, supply a `source-branch` param
+yourself, or pass your own `Result` to `equals`/`matches`.
+
+### File-change rules (`onChanges`)
+
+Gate a job on **whether files changed at runtime** (GitLab `rules:changes`). `onChanges(paths)`
+creates a detection task that diffs the checked-out commit against a base and writes a boolean
+result, then returns a `Condition` gating on it. The detection task is **auto-wired** into the
+graph — no manual `needs`.
+
+```typescript
+import { Task, onBranch, onChanges, or } from '@pfenerty/tektonic';
+
+const integration = new Task({
+  name: 'integration',
+  // always on main / merges to main; on feature branches only when these paths changed
+  when: or(onBranch('main'), onChanges(['src/**', 'package.json'])),
+  steps: [/* ... */],
+});
+```
+
+`onChanges` accepts an array of git glob pathspecs, or an options object
+(`{ paths, name?, base?, image?, workspace? }`). The **diff base** comes from the `diff-base`
+pipeline param, which the triggers supply per event: on push, the previous commit
+(`body.before`); on pull requests, the target branch tip (`base.sha`). Under `PACProject`,
+`diff-base` binds to `{{ target_branch }}`.
+
+**Notes & limits:**
+- Detection uses `git diff` in-repo (no token, portable). It **fails open** (treats as changed)
+  when the base can't be fetched (e.g. a brand-new branch).
+- `onChanges` creates one detection task named `detect-changes` by default — reuse the returned
+  `Condition`, or pass `name` for multiple independent change checks (duplicate task names are
+  rejected by pipeline validation).
+- Under `PACProject`, PAC exposes no previous-commit variable for **push** events (`diff-base`
+  falls back to `{{ target_branch }}`), so change detection is most meaningful on **pull_request**
+  events there. `TektonProject` push uses the real previous commit.
+- For a plain `Pipeline` (no `GitPipeline`), pass `workspace` so the detection task has the repo.
 
 > **Classic vs. CEL.** Exact-match rules (`equals`, `isIn`, `onBranch`, …) use Tekton's classic
 > `in`/`notin` guards and need **no** cluster configuration. Pattern/OR rules (`matches`,

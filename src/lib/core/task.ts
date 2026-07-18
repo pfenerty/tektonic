@@ -401,6 +401,13 @@ export class TaskDef implements TaskLike {
         this.retries = opts.retries;
         this.timeout = opts.timeout;
         this.fanOut = opts.fanOut;
+        // Gating on a task's result (e.g. a change-detection task) auto-wires the
+        // producing task into the dependency graph — no manual `needs`.
+        if (opts.when instanceof Condition) {
+            for (const src of opts.when.sources()) {
+                if (!this.needs.includes(src)) this.needs.push(src);
+            }
+        }
         if (opts.fanOut) {
             const { over, as, from } = opts.fanOut;
             if (!this.params.includes(as) && !this.params.some((p) => p.name === as.name)) {

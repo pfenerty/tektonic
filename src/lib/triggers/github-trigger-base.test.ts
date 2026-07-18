@@ -82,4 +82,26 @@ describe('GitHubTriggerBase', () => {
       expect(pr.metadata.annotations).toBeUndefined();
     });
   });
+
+  describe('source-branch and diff-base plumbing (push)', () => {
+    const getBinding = (props: object) => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      new GitHubPushTrigger(chart, 'trigger', { ...baseProps, ...props } as any);
+      return chart.toJson().find((m: any) => m.kind === 'TriggerBinding');
+    };
+
+    it('binding extracts the normalized branch and the previous commit', () => {
+      const params = getBinding({}).spec.params as Array<{ name: string; value: string }>;
+      expect(params.find(p => p.name === 'source-branch')?.value).toBe('$(extensions.branch)');
+      expect(params.find(p => p.name === 'diff-base')?.value).toBe('$(body.before)');
+    });
+
+    it('PipelineRun passes source-branch and diff-base params', () => {
+      const template = getTriggerTemplate({});
+      const params = template.spec.resourcetemplates[0].spec.params as Array<{ name: string; value: string }>;
+      expect(params.find((p: any) => p.name === 'source-branch')?.value).toBe('$(tt.params.source-branch)');
+      expect(params.find((p: any) => p.name === 'diff-base')?.value).toBe('$(tt.params.diff-base)');
+    });
+  });
 });

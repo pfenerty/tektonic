@@ -150,6 +150,10 @@ export class TektonProject {
         ? [
             { name: 'project-name', type: 'string' },
             { name: 'repo-full-name', type: 'string' },
+            // The GitHub triggers always supply these, so the pipeline must declare them
+            // (used by branch rules and change-detection; empty default for manual runs).
+            { name: 'source-branch', type: 'string', default: '' },
+            { name: 'diff-base', type: 'string', default: '' },
           ]
         : [];
       pipeline._build(chart, 'pipeline', namespace, extraParams, prefix || undefined);

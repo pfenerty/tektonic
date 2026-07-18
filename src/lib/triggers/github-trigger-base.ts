@@ -58,6 +58,16 @@ export interface GitHubTriggerConfig {
     gitRevisionValue: string;
     /** CEL/body expression that extracts the git ref from the webhook payload (optional). */
     gitRefValue?: string;
+    /**
+     * Expression producing the normalized branch name (no `refs/heads/` prefix), bound to
+     * the `source-branch` pipeline param used by branch rules (`onBranch`, …). Optional.
+     */
+    branchValue?: string;
+    /**
+     * Expression producing the base ref/SHA to diff against, bound to the `diff-base`
+     * pipeline param used by change-detection rules (`onChanges`). Optional.
+     */
+    diffBaseValue?: string;
 }
 
 /**
@@ -114,6 +124,12 @@ export class GitHubTriggerBase extends Construct {
                     ...(config.gitRefValue
                         ? [{ name: "gitref", value: config.gitRefValue }]
                         : []),
+                    ...(config.branchValue
+                        ? [{ name: "source-branch", value: config.branchValue }]
+                        : []),
+                    ...(config.diffBaseValue
+                        ? [{ name: "diff-base", value: config.diffBaseValue }]
+                        : []),
                 ],
             },
         });
@@ -143,6 +159,12 @@ export class GitHubTriggerBase extends Construct {
                     },
                     ...(config.gitRefValue
                         ? [{ name: "gitref", description: "The git ref" }]
+                        : []),
+                    ...(config.branchValue
+                        ? [{ name: "source-branch", description: "The normalized branch name" }]
+                        : []),
+                    ...(config.diffBaseValue
+                        ? [{ name: "diff-base", description: "The base ref/SHA to diff against" }]
                         : []),
                 ],
                 resourcetemplates: [
@@ -186,6 +208,22 @@ export class GitHubTriggerBase extends Construct {
                                           {
                                               name: props.gitRefParam,
                                               value: "$(tt.params.gitref)",
+                                          },
+                                      ]
+                                    : []),
+                                ...(config.branchValue
+                                    ? [
+                                          {
+                                              name: "source-branch",
+                                              value: "$(tt.params.source-branch)",
+                                          },
+                                      ]
+                                    : []),
+                                ...(config.diffBaseValue
+                                    ? [
+                                          {
+                                              name: "diff-base",
+                                              value: "$(tt.params.diff-base)",
                                           },
                                       ]
                                     : []),

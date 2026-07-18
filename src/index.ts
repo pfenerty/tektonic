@@ -34,6 +34,8 @@ export {
     GIT_BRANCH_REF,
 } from "./lib/core/condition";
 export type { Expressable, WhenClause, CelWhenExpression } from "./lib/core/condition";
+export { onChanges } from "./lib/core/changes";
+export type { OnChangesOptions } from "./lib/core/changes";
 export { Pipeline } from "./lib/core/pipeline";
 export type { PipelineOptions } from "./lib/core/pipeline";
 export { GitPipeline } from "./lib/core/git-pipeline";

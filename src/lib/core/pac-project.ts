@@ -20,6 +20,7 @@ const PAC_PARAM_BINDINGS: Record<string, string> = {
   'project-name': '{{ repo_name }}',
   'repo-full-name': '{{ repo_owner }}/{{ repo_name }}',
   'source-branch': '{{ source_branch }}',
+  'diff-base': '{{ target_branch }}',
 };
 
 const EXTRA_PIPELINE_PARAMS = [

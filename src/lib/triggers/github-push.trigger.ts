@@ -13,6 +13,10 @@ export class GitHubPushTrigger extends GitHubTriggerBase {
       pipelineRunGenerateName: 'github-push-pipeline-run-',
       gitRevisionValue: '$(body.head_commit.id)',
       gitRefValue: '$(body.ref)',
+      // Normalized branch name from the CEL overlay (see GitHubVcsProvider push interceptor).
+      branchValue: '$(extensions.branch)',
+      // Diff against the commit prior to this push.
+      diffBaseValue: '$(body.before)',
     });
   }
 }

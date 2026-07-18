@@ -10,6 +10,24 @@ describe('TektonInfraChart', () => {
     pullRequestPipelineRef: 'pr-pipeline',
   };
 
+  describe('push branch overlay', () => {
+    it('adds a CEL interceptor that normalizes the pushed ref into extensions.branch', () => {
+      const app = new App();
+      new TektonInfraChart(app, 'infra', { ...baseProps });
+      const manifests = app.charts.flatMap(c => c.toJson());
+      const el = manifests.find((m: any) => m.kind === 'EventListener');
+      const pushTrigger = el.spec.triggers.find((t: any) =>
+        t.interceptors?.some((i: any) =>
+          i.params?.some((p: any) => Array.isArray(p.value) && p.value.includes('push')),
+        ),
+      );
+      const cel = pushTrigger.interceptors.find((i: any) => i.ref.name === 'cel');
+      const overlays = cel.params.find((p: any) => p.name === 'overlays').value;
+      expect(overlays[0].key).toBe('branch');
+      expect(overlays[0].expression).toContain("refs/heads/");
+    });
+  });
+
   describe('cache PVC generation', () => {
     it('generates a PVC for each cache entry', () => {
       const app = new App();

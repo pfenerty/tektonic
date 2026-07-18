@@ -61,12 +61,25 @@ export class GitHubVcsProvider implements VcsProvider {
                 ...secretInterceptorParam,
               ],
             },
-            ...(hasTagEvent
-              ? [{
-                  ref: { kind: 'ClusterInterceptor', name: 'cel' },
-                  params: [{ name: 'filter', value: "!body.ref.startsWith('refs/tags/')" }],
-                }]
-              : []),
+            {
+              ref: { kind: 'ClusterInterceptor', name: 'cel' },
+              params: [
+                // Normalize the pushed ref to a bare branch name for the `source-branch`
+                // param (branch rules). Tag refs pass through unchanged (they are excluded
+                // by the filter below when a tag pipeline is configured).
+                {
+                  name: 'overlays',
+                  value: [{
+                    key: 'branch',
+                    expression:
+                      "body.ref.startsWith('refs/heads/') ? body.ref.split('refs/heads/')[1] : body.ref",
+                  }],
+                },
+                ...(hasTagEvent
+                  ? [{ name: 'filter', value: "!body.ref.startsWith('refs/tags/')" }]
+                  : []),
+              ],
+            },
           ],
           template: { ref: trigger.templateRef },
         },
