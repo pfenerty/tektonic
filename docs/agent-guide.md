@@ -13,8 +13,13 @@ A complete reference for agents creating Tekton CI/CD pipelines with this librar
 ## Installation
 
 ```bash
-npm install @pfenerty/tektonic cdk8s constructs
+npm install @pfenerty/tektonic
 ```
+
+`tektonic` bundles and version-manages `cdk8s` and `constructs` for you — you do
+not need to install or declare them separately. The few cdk8s/constructs types
+you might need for advanced usage (`App`, `Chart`, `ChartProps`, `Construct`,
+`ApiObject`) are re-exported from `@pfenerty/tektonic`.
 
 Create a pipeline file (e.g. `ci/pipeline.ts`) and run it:
 
@@ -602,7 +607,16 @@ const dbTest = new Task({
 `VcsProvider` is a pluggable interface for generating Tekton trigger resources. The default is `GitHubVcsProvider`. Override via `TektonProject.providers` to add support for GitLab, Gitea, or other VCS hosts without modifying the library.
 
 ```typescript
-import { GitHubVcsProvider } from '@pfenerty/tektonic';
+import {
+  GitHubVcsProvider,
+  TektonProject,
+  TRIGGER_EVENTS,
+  // cdk8s/constructs types are re-exported from tektonic — no separate install:
+  Construct,
+  type VcsProvider,
+  type VcsProviderCtx,
+  type VcsTriggerContribution,
+} from '@pfenerty/tektonic';
 
 // Default (GitHub) — explicit form:
 new TektonProject({
@@ -614,7 +628,12 @@ new TektonProject({
 class MyGitLabProvider implements VcsProvider {
   readonly supportedEvents = [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST];
 
-  buildTrigger(scope, pipelineRef, event, ctx): VcsTriggerContribution {
+  buildTrigger(
+    scope: Construct,
+    pipelineRef: string,
+    event: TRIGGER_EVENTS,
+    ctx: VcsProviderCtx,
+  ): VcsTriggerContribution {
     // Create TriggerBinding + TriggerTemplate ApiObjects under `scope`
     // Return the EventListener trigger entry
     ...
