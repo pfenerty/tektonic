@@ -149,6 +149,9 @@ const task = new Task({
 - Steps run in order. If a step fails and `onError` is not `'continue'`, the task stops.
 - `needs` drives the pipeline dependency graph — tasks without `needs` run after git-clone.
 - The status reporter appends a final reporting step automatically at synthesis time.
+- `when` gates the job with a typed rule, `fanOut` runs it once per runtime item, and `retries`/
+  `timeout` tune the TaskRun — see [Rules & Conditions](#rules--conditions) and
+  [Fan-Out (dynamic jobs)](#fan-out-dynamic-jobs).
 
 ## GitPipeline
 
@@ -403,9 +406,105 @@ const pipeline = new Pipeline({ name: 'ci', tasks: [build] });
 
 ---
 
+## Rules & Conditions
+
+Gate a job with a typed, composable rule via the `when` **task attribute**. Rules are plain
+values — name them, reuse them across tasks, and unit-test them. They compile to Tekton `when`
+guards.
+
+```typescript
+import { Task, onBranch, onBranchMatching, equals, and, not } from '@pfenerty/tektonic';
+
+const test = new Task({
+  name: 'test',
+  when: onBranchMatching('^(main|release/.*)$'), // only on main or release/* branches
+  steps: [/* ... */],
+});
+
+const deploy = new Task({
+  name: 'deploy',
+  when: onBranch('main').and(equals(approval, 'yes')), // AND-composed
+  steps: [/* ... */],
+});
+```
+
+**Constructors** (all take typed handles — `Param`, `Result`, or a string — never a hand-written
+`$(...)`):
+
+| Constructor | Meaning | Compiles to |
+|-------------|---------|-------------|
+| `equals(h, v)` / `notEquals(h, v)` | exact (in)equality | classic `in` / `notin` |
+| `isIn(h, vs)` / `notIn(h, vs)` | set membership | classic `in` / `notin` |
+| `matches(h, re)` | RE2 regex match | CEL guard |
+| `onBranch(name)` / `onBranches(names)` | on the given branch(es) | classic `in` |
+| `onBranchMatching(pattern)` | branch matches an RE2 pattern | CEL guard |
+| `a.and(b)` / `and(...)` | logical AND | concatenated `when` clauses |
+| `or(...)` | logical OR | single CEL guard |
+| `not(c)` | negation | flips `in`↔`notin`, else CEL |
+
+`onBranch*` reference `GitPipeline`'s `git-clone` `branch` result. For a plain `Pipeline` or a
+custom clone, pass your own `Result` to `equals`/`matches`.
+
+> **Classic vs. CEL.** Exact-match rules (`equals`, `isIn`, `onBranch`, …) use Tekton's classic
+> `in`/`notin` guards and need **no** cluster configuration. Pattern/OR rules (`matches`,
+> `onBranchMatching`, `or`, and negation of compound conditions) compile to **CEL** guards, which
+> require the cluster's `enable-cel-in-whenexpression` feature flag. The DSL keeps this boundary
+> visible so you know which rules carry a runtime requirement.
+
+`when` also accepts raw `WhenClause[]` for full control.
+
+## Fan-Out (dynamic jobs)
+
+Run one job per item discovered **at runtime** via the `fanOut` task attribute. A parse task emits
+an array `Result`; a downstream task fans out over it into one TaskRun per element, using a Tekton
+`matrix`. The number of jobs is unknown until the parse task runs.
+
+```typescript
+import { Task, Param, Result, fanOut } from '@pfenerty/tektonic'; // fanOut only needed for the helper form
+
+// 1. Parse task emits a runtime array (e.g. writes ["api","web"] to the result path).
+const changed = new Result({ name: 'changed-services', type: 'array' });
+const detect = new Task({
+  name: 'detect-changes',
+  results: [changed],
+  steps: [{ name: 'detect', image, script: sh`node scripts/changed-services.mjs > ${changed.path}` }],
+});
+
+// 2. Per-item task declares a string Param; each element fills it.
+const service = new Param({ name: 'service' });
+const deploy = new Task({
+  name: 'deploy',
+  params: [service],                       // must declare the `as` Param
+  when: onBranch('main'),                  // rules and fan-out combine
+  fanOut: { over: changed, as: service },  // `as` is the typed Param handle, not a string
+  steps: [{ name: 'deploy', image, script: sh`./deploy.sh ${service}` }],
+});
+
+new GitPipeline({ triggers: [TRIGGER_EVENTS.PUSH], tasks: [detect, deploy] });
+```
+
+This emits `matrix: { params: [{ name: service, value: $(tasks.detect-changes.results.changed-services[*]) }] }`
+on `deploy`, with `runAfter: [detect-changes]`.
+
+**`fanOut` options:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `over` | `Result` | Array-typed result driving the fan-out (`type: 'array'`) |
+| `as` | `Param` | The string Param (declared in the task's `params`) each element fills |
+| `from?` | `TaskLike` | Producing task for the ordering edge; defaults to `over.owner` |
+
+**Notes:** the producing task is auto-added to `needs`, so ordering, auto-discovery, and cycle
+checks work without extra wiring. The matrixed param is supplied per-element by the matrix, so it
+is **not** surfaced as a pipeline-level param (but it is still declared on the produced Task
+manifest). Tekton array results are JSON — the parse task writes e.g. `["api","web"]`.
+
 ## Conditional Tasks (gated)
 
-`gated()` wraps a task with per-pipeline-edge overrides — `when` expressions, retry counts, and timeouts. The same task instance can be conditional in one pipeline and unconditional in another.
+For most cases use the `when`/`fanOut` **task attributes** above. `gated()` remains as the
+per-pipeline-edge escape hatch: it wraps a task with overrides — `when` (a `Condition` or raw
+clauses), `retries`, `timeout`, `matrix` — applied only for that one pipeline appearance, so the
+**same task instance** can be conditional in one pipeline and unconditional in another.
 
 ```typescript
 import { gated } from '@pfenerty/tektonic';

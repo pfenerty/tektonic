@@ -3,6 +3,7 @@ import { App, Chart } from 'cdk8s';
 import { Pipeline } from './pipeline';
 import { Task } from './task';
 import { Param } from './param';
+import { Result } from './result';
 import { Workspace } from './workspace';
 import { TRIGGER_EVENTS } from './trigger-events';
 import { GitHubStatusReporter } from '../reporters/github-status-reporter';
@@ -239,5 +240,56 @@ describe('Pipeline', () => {
     const paramNames = manifest.spec.params.map((p: any) => p.name);
     expect(paramNames).toContain('project-name');
     expect(paramNames).toContain('url');
+  });
+
+  describe('fan-out', () => {
+    const buildFanoutPipeline = () => {
+      const targets = new Result({ name: 'targets', type: 'array' });
+      const detect = new Task({
+        name: 'detect',
+        results: [targets],
+        steps: [{ name: 'd', image: 'alpine' }],
+      });
+      const service = new Param({ name: 'service' });
+      const deploy = new Task({
+        name: 'deploy',
+        params: [service],
+        fanOut: { over: targets, as: service },
+        steps: [{ name: 's', image: 'alpine' }],
+      });
+      return { targets, detect, service, deploy };
+    };
+
+    it('excludes the fan-out param from pipeline-level inference', () => {
+      const { deploy } = buildFanoutPipeline();
+      const pipeline = new Pipeline({ name: 'ci', tasks: [deploy] });
+      expect(pipeline.inferParams().map((p: any) => p.name)).not.toContain('service');
+    });
+
+    it('auto-discovers the producing task and emits matrix + runAfter', () => {
+      const { deploy } = buildFanoutPipeline();
+      const pipeline = new Pipeline({ name: 'ci', tasks: [deploy] });
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      pipeline._build(chart, 'pipeline', 'ns');
+      const manifest = chart.toJson()[0] as any;
+
+      const deployEntry = manifest.spec.tasks.find((t: any) => t.name === 'deploy');
+      expect(deployEntry.matrix).toEqual({
+        params: [{ name: 'service', value: '$(tasks.detect.results.targets[*])' }],
+      });
+      expect(deployEntry.runAfter).toContain('detect');
+      // producing task auto-discovered though only reachable via the fan-out edge
+      expect(manifest.spec.tasks.map((t: any) => t.name)).toContain('detect');
+    });
+
+    it('keeps the matrixed param on the produced Task manifest (synth vs. inference)', () => {
+      const { deploy } = buildFanoutPipeline();
+      const app = new App();
+      const chart = new Chart(app, 't');
+      deploy.synth(chart, 'ns');
+      const taskManifest = chart.toJson()[0] as any;
+      expect(taskManifest.spec.params.map((p: any) => p.name)).toContain('service');
+    });
   });
 });
