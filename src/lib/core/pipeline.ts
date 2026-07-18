@@ -119,7 +119,11 @@ export class Pipeline {
   inferParams(): Record<string, unknown>[] {
     const seen = new Map<string, Param>();
     for (const task of [...this.allTasks, ...this.finallyTasks]) {
+      // A fan-out param is supplied per-element by the task's matrix, not by a
+      // pipeline-level param, so exclude it from inference.
+      const matrixParam = task instanceof TaskDef && task.fanOut ? task.fanOut.as.name : undefined;
       for (const p of task.params) {
+        if (p.name === matrixParam) continue;
         if (!seen.has(p.name) && !p.pipelineExpression) seen.set(p.name, p);
       }
     }

@@ -10,6 +10,8 @@ import {
 import { Param } from "./param";
 import { Workspace } from "./workspace";
 import { Result } from "./result";
+import { Condition, normalizeWhen } from "./condition";
+import type { WhenClause } from "./condition";
 import { PvcBackend } from "../cache/pvc-backend";
 import type { StatusReporter } from "./status-reporter";
 import type { CacheBackend, BackendCtx } from "./cache-backend";
@@ -290,6 +292,32 @@ export interface TaskOptions {
      * for ecosystem integrations — e.g. `chains.tekton.dev/*` for Tekton Chains.
      */
     annotations?: Record<string, string>;
+    /**
+     * Conditional guard controlling whether this task runs — a typed {@link Condition}
+     * (e.g. `onBranch('main')`, `equals(result, 'go').and(...)`) or raw `when` clauses.
+     * Emitted as the pipeline task's `when`. Exact-match conditions need no cluster
+     * feature flag; pattern/OR conditions compile to CEL and require
+     * `enable-cel-in-whenexpression`.
+     */
+    when?: Condition | WhenClause[];
+    /**
+     * Number of times to retry this task's TaskRun on failure
+     * (`v1.PipelineTask.retries`). Useful for flaky, network-dependent tasks.
+     */
+    retries?: number;
+    /**
+     * Maximum duration before this task's TaskRun times out, as a Go duration string
+     * (e.g. `"10m"`, `"1h30m"`). Corresponds to `v1.PipelineTask.timeout`.
+     */
+    timeout?: string;
+    /**
+     * Fan this task out at runtime into one TaskRun per element of an array
+     * {@link Result}, via a Tekton `matrix`. `over` is the array result driving the
+     * fan-out; `as` is the string {@link Param} (declared in `params`) each element
+     * fills. The producing task is auto-added to `needs` so ordering is correct; pass
+     * `from` when the result's producer can't be inferred from `over.owner`.
+     */
+    fanOut?: { over: Result; as: Param; from?: TaskLike };
 }
 
 /**
@@ -328,6 +356,14 @@ export class TaskDef implements TaskLike {
     readonly defaultLanguage?: LanguageName;
     /** Annotations set on the generated Task metadata. */
     readonly annotations?: Record<string, string>;
+    /** Conditional guard emitted as the pipeline task's `when`. */
+    readonly when?: Condition | WhenClause[];
+    /** Retry count on failure, emitted as the pipeline task's `retries`. */
+    readonly retries?: number;
+    /** TaskRun timeout (Go duration), emitted as the pipeline task's `timeout`. */
+    readonly timeout?: string;
+    /** Runtime fan-out over an array result, emitted as the pipeline task's `matrix`. */
+    readonly fanOut?: { over: Result; as: Param; from?: TaskLike };
 
     constructor(opts: TaskOptions) {
         this.name = opts.name;
@@ -341,7 +377,8 @@ export class TaskDef implements TaskLike {
         this.params = [...seen.values()];
         this.workspaces = [...(opts.workspaces ?? [])];
         this.steps = opts.steps;
-        this.needs = opts.needs ?? [];
+        // Copy so fan-out edge injection never mutates a caller-supplied array.
+        this.needs = [...(opts.needs ?? [])];
         this.stepTemplate = opts.stepTemplate;
         this.statusContext = opts.statusContext ?? opts.name;
         this.statusReporter = opts.statusReporter;
@@ -355,11 +392,30 @@ export class TaskDef implements TaskLike {
             }
         }
         this.results = opts.results ?? [];
-        for (const r of this.results) r._bindToTask(this.name);
+        for (const r of this.results) r._bindToTask(this.name, this);
         this.sidecars = opts.sidecars ?? [];
         this.volumes = opts.volumes ?? [];
         this.defaultLanguage = opts.defaultLanguage;
         this.annotations = opts.annotations;
+        this.when = opts.when;
+        this.retries = opts.retries;
+        this.timeout = opts.timeout;
+        this.fanOut = opts.fanOut;
+        if (opts.fanOut) {
+            const { over, as, from } = opts.fanOut;
+            if (!this.params.includes(as) && !this.params.some((p) => p.name === as.name)) {
+                throw new Error(
+                    `Task '${this.name}': fanOut param '${as.name}' must be declared in the task's 'params'`,
+                );
+            }
+            const src = from ?? over.owner;
+            if (!src) {
+                throw new Error(
+                    `Task '${this.name}': fanOut.over result '${over.name}' is not bound to a task — construct the producing task first, or pass fanOut.from`,
+                );
+            }
+            if (!this.needs.includes(src)) this.needs.push(src);
+        }
     }
 
     /**
@@ -513,6 +569,26 @@ export class TaskDef implements TaskLike {
         }
         if (runAfterNames.length > 0) {
             spec.runAfter = runAfterNames;
+        }
+        if (this.when) {
+            const when = normalizeWhen(this.when);
+            if (when.length) spec.when = when;
+        }
+        if (this.retries !== undefined) {
+            spec.retries = this.retries;
+        }
+        if (this.timeout !== undefined) {
+            spec.timeout = this.timeout;
+        }
+        if (this.fanOut) {
+            const matrixName = this.fanOut.as.name;
+            if (Array.isArray(spec.params)) {
+                spec.params = (spec.params as { name: string }[]).filter(
+                    (p) => p.name !== matrixName,
+                );
+                if ((spec.params as unknown[]).length === 0) delete spec.params;
+            }
+            spec.matrix = { params: [{ name: matrixName, value: this.fanOut.over.arrayRef }] };
         }
         return spec;
     }

@@ -9,6 +9,7 @@ import { gcs } from '../cache/gcs-backend';
 import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES, DEFAULT_BASE_IMAGE, DEFAULT_GCS_CACHE_IMAGE } from '../constants';
 import { GitHubStatusReporter } from '../reporters/github-status-reporter';
 import { nu, EXIT_CODE_PATH } from '../script';
+import { onBranch } from './condition';
 
 describe('Task', () => {
   const workspace = new Workspace({ name: 'workspace' });
@@ -1347,6 +1348,87 @@ describe('Task', () => {
       const t = new Task({ name: 'first', steps: [{ name: 's', image: 'alpine' }] });
       const spec = t._toPipelineTaskSpec([]);
       expect(spec.runAfter).toBeUndefined();
+    });
+
+    it('emits when from a Condition attribute', () => {
+      const t = new Task({
+        name: 'deploy',
+        when: onBranch('main'),
+        steps: [{ name: 's', image: 'alpine' }],
+      });
+      expect(t._toPipelineTaskSpec([]).when).toEqual([
+        { input: '$(tasks.git-clone.results.branch)', operator: 'in', values: ['main'] },
+      ]);
+    });
+
+    it('emits when from a raw WhenClause[] attribute', () => {
+      const raw = [{ input: '$(params.x)', operator: 'in' as const, values: ['a'] }];
+      const t = new Task({ name: 'deploy', when: raw, steps: [{ name: 's', image: 'alpine' }] });
+      expect(t._toPipelineTaskSpec([]).when).toEqual(raw);
+    });
+
+    it('emits retries and timeout attributes', () => {
+      const t = new Task({
+        name: 'flaky',
+        retries: 3,
+        timeout: '30m',
+        steps: [{ name: 's', image: 'alpine' }],
+      });
+      const spec = t._toPipelineTaskSpec([]);
+      expect(spec.retries).toBe(3);
+      expect(spec.timeout).toBe('30m');
+    });
+
+    it('fanOut emits matrix, drops the matrixed param, and wires the needs edge', () => {
+      const targets = new Result({ name: 'targets', type: 'array' });
+      const detect = new Task({
+        name: 'detect',
+        results: [targets],
+        steps: [{ name: 'd', image: 'alpine' }],
+      });
+      const service = new Param({ name: 'service' });
+      const deploy = new Task({
+        name: 'deploy',
+        params: [service],
+        fanOut: { over: targets, as: service },
+        steps: [{ name: 's', image: 'alpine' }],
+      });
+      // edge auto-added from the array result's owner
+      expect(deploy.needs).toContain(detect);
+      const spec = deploy._toPipelineTaskSpec(['detect']);
+      expect(spec.matrix).toEqual({
+        params: [{ name: 'service', value: '$(tasks.detect.results.targets[*])' }],
+      });
+      // matrixed param removed from regular params (here it was the only one)
+      expect(spec.params).toBeUndefined();
+    });
+
+    it('fanOut throws when the as Param is not declared on the task', () => {
+      const targets = new Result({ name: 'targets', type: 'array' });
+      new Task({ name: 'detect', results: [targets], steps: [{ name: 'd', image: 'alpine' }] });
+      const service = new Param({ name: 'service' });
+      expect(
+        () =>
+          new Task({
+            name: 'deploy',
+            fanOut: { over: targets, as: service },
+            steps: [{ name: 's', image: 'alpine' }],
+          }),
+      ).toThrow(/must be declared in the task's 'params'/);
+    });
+
+    it('fanOut throws when the array result is unbound and no from given', () => {
+      const targets = new Result({ name: 'targets', type: 'array' });
+      const service = new Param({ name: 'service' });
+      expect(
+        () =>
+          new Task({
+            name: 'deploy',
+            params: [service],
+            fanOut: { over: targets, as: service },
+            steps: [{ name: 's', image: 'alpine' }],
+          }),
+      ).toThrow(/not bound to a task/);
     });
   });
 

@@ -81,4 +81,29 @@ describe("Result", () => {
             "git rev-parse HEAD > $(results.commit.path)",
         );
     });
+
+    it("owner is undefined before bind and set after", () => {
+        const r = new Result({ name: "items", type: "array" });
+        expect(r.owner).toBeUndefined();
+        const owner = { name: "detect" } as unknown as import("./task").TaskLike;
+        r._bindToTask("detect", owner);
+        expect(r.owner).toBe(owner);
+    });
+
+    it("arrayRef returns the [*] splat for a bound array result", () => {
+        const r = new Result({ name: "targets", type: "array" });
+        r._bindToTask("detect");
+        expect(r.arrayRef).toBe("$(tasks.detect.results.targets[*])");
+    });
+
+    it("arrayRef throws for a non-array result", () => {
+        const r = new Result({ name: "commit", type: "string" });
+        r._bindToTask("git-clone");
+        expect(() => r.arrayRef).toThrow(/not 'array'/);
+    });
+
+    it("arrayRef throws before bind", () => {
+        const r = new Result({ name: "targets", type: "array" });
+        expect(() => r.arrayRef).toThrow(/not bound to a task/);
+    });
 });

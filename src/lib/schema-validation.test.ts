@@ -19,6 +19,7 @@ import { App, Chart } from 'cdk8s';
 import { Task } from './core/task';
 import { Pipeline } from './core/pipeline';
 import { gated } from './core/pipeline-task';
+import { onBranchMatching } from './core/condition';
 import { HubTaskRef } from './core/hub-task-ref';
 import { Result } from './core/result';
 import { Param } from './core/param';
@@ -263,6 +264,47 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
       when: [{ input: '$(params.type)', operator: 'in', values: ['push'] }],
     });
     const pipeline = new Pipeline({ name: 'ci', tasks: [gatedBuild] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline._build(chart, 'pipeline', 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    for (const task of manifest.spec.tasks as AnyObj[]) {
+      assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
+    }
+  });
+
+  it('pipeline task with CEL when clause conforms to v1.PipelineTask schema', () => {
+    const gatedBuild = gated(build, { when: onBranchMatching('^(main|release/.*)$') });
+    const pipeline = new Pipeline({ name: 'ci', tasks: [gatedBuild] });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    pipeline._build(chart, 'pipeline', 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
+    expect(buildEntry?.when?.[0]?.cel).toContain('.matches(');
+    for (const task of manifest.spec.tasks as AnyObj[]) {
+      assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
+    }
+  });
+
+  it('fanned-out pipeline task conforms to v1.PipelineTask schema', () => {
+    const targets = new Result({ name: 'targets', type: 'array' });
+    const detect = new Task({
+      name: 'detect',
+      results: [targets],
+      steps: [{ name: 'd', image: 'alpine' }],
+    });
+    const service = new Param({ name: 'service' });
+    const deploy = new Task({
+      name: 'deploy',
+      params: [service],
+      fanOut: { over: targets, as: service },
+      steps: [{ name: 's', image: 'alpine' }],
+    });
+    void detect;
+    const pipeline = new Pipeline({ name: 'ci', tasks: [deploy] });
     const app = new App();
     const chart = new Chart(app, 'test');
     pipeline._build(chart, 'pipeline', 'ns');
