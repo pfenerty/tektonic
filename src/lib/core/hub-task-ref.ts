@@ -27,7 +27,7 @@ export interface HubTaskRefOptions {
  * A pipeline node backed by a remote ArtifactHub task.
  *
  * `HubTaskRef` implements `TaskLike` with `synthesizable: false`, so
- * `TektonProject` skips generating a local `kind: Task` resource for it.
+ * `TektonicProject` skips generating a local `kind: Task` resource for it.
  * The synthesized pipeline entry uses Tekton's hub resolver:
  *
  * ```yaml

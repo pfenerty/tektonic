@@ -34,17 +34,21 @@ export {
     GIT_BRANCH_REF,
 } from "./lib/core/condition";
 export type { Expressable, WhenClause, CelWhenExpression } from "./lib/core/condition";
+export { onChanges } from "./lib/core/changes";
+export type { OnChangesOptions } from "./lib/core/changes";
 export { Pipeline } from "./lib/core/pipeline";
 export type { PipelineOptions } from "./lib/core/pipeline";
+export { globToRegex } from "./lib/core/pac-trigger";
+export type { PipelineTrigger, TriggerRule } from "./lib/core/pac-trigger";
 export { GitPipeline } from "./lib/core/git-pipeline";
 export type { GitPipelineOptions } from "./lib/core/git-pipeline";
-export { TektonProject } from "./lib/core/tekton-project";
+export { TektonicProject } from "./lib/core/tektonic-project";
 export type {
-    TektonProjectOptions,
+    TektonicProjectOptions,
     CacheSpec,
-} from "./lib/core/tekton-project";
-export { PACProject } from "./lib/core/pac-project";
-export type { PACProjectOptions } from "./lib/core/pac-project";
+    RepositoryConfig,
+    RepositoryGitProvider,
+} from "./lib/core/tektonic-project";
 export { TRIGGER_EVENTS } from "./lib/core/trigger-events";
 export type { StatusReporter } from "./lib/core/status-reporter";
 
@@ -57,25 +61,6 @@ export type { ScriptLanguage, ScriptCtx, ScriptInput, ScriptObject, LanguageName
 export { GitHubStatusReporter } from "./lib/reporters/github-status-reporter";
 export type { GitHubStatusReporterOptions } from "./lib/reporters/github-status-reporter";
 
-// Triggers
-export { GitHubVcsProvider } from "./lib/triggers/github-vcs-provider";
-export type { VcsProvider, VcsProviderCtx, VcsTriggerContribution } from "./lib/triggers/vcs-provider";
-export { GitHubTriggerBase } from "./lib/triggers/github-trigger-base";
-export type {
-    GitHubTriggerBaseProps,
-    GitHubTriggerConfig,
-} from "./lib/triggers/github-trigger-base";
-export { GitHubPushTrigger } from "./lib/triggers/github-push.trigger";
-export type { GitHubPushTriggerProps } from "./lib/triggers/github-push.trigger";
-export { GitHubPullRequestTrigger } from "./lib/triggers/github-pull-request.trigger";
-export type { GitHubPullRequestTriggerProps } from "./lib/triggers/github-pull-request.trigger";
-export { GitHubTagTrigger } from "./lib/triggers/github-tag.trigger";
-export type { GitHubTagTriggerProps } from "./lib/triggers/github-tag.trigger";
-
-// Infrastructure
-export { TektonInfraChart } from "./charts/tekton-infra.chart";
-export type { TektonInfraChartProps } from "./charts/tekton-infra.chart";
-
 // Re-exported from cdk8s / constructs so downstream projects depend only on tektonic
 export { App, Chart, ApiObject } from "cdk8s";
 export type { AppProps, ChartProps } from "cdk8s";
@@ -84,14 +69,11 @@ export { Construct } from "constructs";
 // Constants
 export {
     TEKTON_API_V1,
-    TRIGGERS_API,
-    PIPELINE_RUN_API,
+    PAC_API,
     DEFAULT_POD_SECURITY_CONTEXT,
     DEFAULT_STEP_SECURITY_CONTEXT,
     RESTRICTED_STEP_SECURITY_CONTEXT,
     DEFAULT_STEP_RESOURCES,
     DEFAULT_BASE_IMAGE,
-    DEFAULT_SERVICE_ACCOUNT,
-    DEFAULT_WORKSPACE_STORAGE,
     DEFAULT_GCS_COMPRESSION_LEVEL,
 } from "./lib/constants";

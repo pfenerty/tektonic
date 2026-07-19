@@ -13,7 +13,7 @@ The default backend stores archives on a Kubernetes PersistentVolumeClaim. Decla
 workspace, attach the cache to a task, and register the workspace's PVC with the project:
 
 ```typescript
-import { Workspace, Task, TektonProject } from '@pfenerty/tektonic';
+import { Workspace, Task, TektonicProject } from '@pfenerty/tektonic';
 
 const nodeCache = new Workspace({ name: 'node-cache' });
 
@@ -30,7 +30,7 @@ const test = new Task({
   steps: [{ name: 'test', image: nodeImage, script: nu`npm ci; npm test` }],
 });
 
-new TektonProject({
+new TektonicProject({
   name: 'app',
   namespace: 'ci',
   pipelines: [pipeline],
@@ -39,8 +39,8 @@ new TektonProject({
 ```
 
 The cache workspace is auto-registered on the task — you don't add it to the task's
-`workspaces` yourself. Register the PVC with whichever synthesizer you use: `TektonProject` or
-[`PACProject`](pac.md#workspaces-and-caches), both via their `caches` option.
+`workspaces` yourself. Register the PVC with whichever synthesizer you use: `TektonicProject` or
+[`TektonicProject`](pac.md#workspaces-and-caches), both via their `caches` option.
 
 ## GCS backend
 
@@ -61,9 +61,9 @@ caches: [{
 }]
 ```
 
-Bind the triggers/run ServiceAccount to a GCP service account with bucket access via
-`serviceAccountAnnotations` (`TektonProject`) — see the
-[agent guide](agent-guide.md#tektonproject). GCS defaults to multi-threaded compression and a
+Bind the PipelineRun ServiceAccount to a GCP service account with bucket access via a
+GKE Workload Identity annotation on that ServiceAccount (created out of band — PAC runs
+PipelineRuns under it but does not create it). GCS defaults to multi-threaded compression and a
 higher compression level than PVC, since it targets environments with spare CPU.
 
 ## Cache options

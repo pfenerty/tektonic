@@ -5,16 +5,21 @@ import { Param } from './param';
 import { Workspace } from './workspace';
 import { Task, TaskLike, TaskDef } from './task';
 import { TRIGGER_EVENTS } from './trigger-events';
+import { triggerEvents } from './pac-trigger';
+import type { PipelineTrigger } from './pac-trigger';
 
 /** Options for constructing a {@link Pipeline}. */
 export interface PipelineOptions {
   /**
-   * Pipeline name. Auto-generated from the trigger type when omitted
-   * (e.g. `"push-pipeline"` for a single push trigger).
+   * Pipeline name. Auto-generated from the trigger event when omitted
+   * (e.g. `"push-pipeline"` for a single-event trigger).
    */
   name?: string;
-  /** Trigger events that should start this pipeline (used by {@link TektonProject} to wire webhooks). */
-  triggers?: TRIGGER_EVENTS[];
+  /**
+   * Firing config — when this pipeline runs (events, branches, paths, comment/label filters).
+   * See {@link PipelineTrigger}. A pipeline without a `trigger` is not emitted.
+   */
+  trigger?: PipelineTrigger;
   /** Top-level tasks. Transitive dependencies are auto-discovered via `task.needs`. */
   tasks: TaskLike[];
   /** Tasks that run unconditionally after all regular tasks complete or fail. */
@@ -22,15 +27,8 @@ export interface PipelineOptions {
   /** Additional pipeline-level params not tied to any specific task. */
   params?: Param[];
   /**
-   * Target branch filter used by {@link PACProject} for the
-   * `pipelinesascode.tekton.dev/on-target-branch` annotation.
-   * Accepts a glob pattern. Defaults to `"*"` (all branches).
-   * Ignored for `TRIGGER_EVENTS.TAG` pipelines, which always target `"refs/tags/*"`.
-   */
-  onTargetBranch?: string;
-  /**
    * Overall PipelineRun timeout as a Go duration string (e.g. `"2h"`, `"90m"`).
-   * Emitted by {@link PACProject} as `spec.timeouts.pipeline`. When unset, Tekton's
+   * Emitted by {@link TektonicProject} as `spec.timeouts.pipeline`. When unset, Tekton's
    * default (1h) applies — raise it for long pipelines (e.g. many image builds).
    */
   timeout?: string;
@@ -45,20 +43,17 @@ export interface PipelineOptions {
  */
 export class Pipeline {
   readonly name: string;
-  /** Trigger events associated with this pipeline. */
-  readonly triggers: TRIGGER_EVENTS[];
+  /** Firing config (events, branches, paths, …), emitted as PAC annotations by TektonicProject. */
+  readonly trigger?: PipelineTrigger;
+  /** Trigger events associated with this pipeline (union of `trigger.rules[].on`). */
+  readonly events: TRIGGER_EVENTS[];
   /** Top-level tasks provided at construction. */
   readonly tasks: TaskLike[];
   /** All tasks including transitive dependencies discovered via `task.needs`. */
   readonly allTasks: TaskLike[];
   /** Tasks that run unconditionally after all regular tasks complete or fail. */
   readonly finallyTasks: TaskLike[];
-  /**
-   * Target branch filter for PAC's `on-target-branch` annotation.
-   * Defaults to `"*"`. Ignored for TAG pipelines, which always use `"refs/tags/*"`.
-   */
-  readonly onTargetBranch: string;
-  /** Overall PipelineRun timeout (Go duration), emitted by PACProject. Unset = Tekton default. */
+  /** Overall PipelineRun timeout (Go duration), emitted by TektonicProject. Unset = Tekton default. */
   readonly timeout?: string;
   private readonly extraParams: Param[];
   /** @internal Auto-generated task that sets all status contexts to pending at pipeline start. */
@@ -67,17 +62,17 @@ export class Pipeline {
   private static _counter = 0;
 
   constructor(opts: PipelineOptions) {
+    this.trigger = opts.trigger;
+    this.events = opts.trigger ? triggerEvents(opts.trigger) : [];
     if (opts.name) {
       this.name = opts.name;
-    } else if (opts.triggers?.length === 1) {
-      this.name = `${opts.triggers[0].replace('_', '-')}-pipeline`;
+    } else if (this.events.length === 1) {
+      this.name = `${this.events[0].replace('_', '-')}-pipeline`;
     } else {
       this.name = `pipeline-${Pipeline._counter++}`;
     }
-    this.triggers = opts.triggers ?? [];
     this.tasks = opts.tasks;
     this.finallyTasks = opts.finallyTasks ?? [];
-    this.onTargetBranch = opts.onTargetBranch ?? '*';
     this.timeout = opts.timeout;
     this.extraParams = opts.params ?? [];
 
@@ -146,8 +141,7 @@ export class Pipeline {
 
   /**
    * @internal Returns the Pipeline spec as a plain object.
-   * Used by {@link TektonProject} via `_build()` and by {@link PACProject} to inline
-   * the spec into a PAC PipelineRun template.
+   * Used by {@link TektonicProject} to inline the spec into a PAC PipelineRun template.
    */
   _buildSpec(
     extraParams?: Record<string, unknown>[],
@@ -169,7 +163,11 @@ export class Pipeline {
     };
   }
 
-  /** @internal Synthesizes the Pipeline resource. Called by {@link TektonProject}. */
+  /**
+   * @internal Synthesizes a standalone `kind: Pipeline` resource. Not used by the PAC
+   * synthesizer (which inlines the spec via {@link Pipeline._buildSpec}); retained for
+   * tests and custom synthesis.
+   */
   _build(
     scope: Construct,
     id: string,

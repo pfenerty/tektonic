@@ -1357,7 +1357,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
       });
       expect(t._toPipelineTaskSpec([]).when).toEqual([
-        { input: '$(tasks.git-clone.results.branch)', operator: 'in', values: ['main'] },
+        { input: '$(params.source-branch)', operator: 'in', values: ['main'] },
       ]);
     });
 

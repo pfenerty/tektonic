@@ -144,7 +144,7 @@ export interface TaskCacheSpec {
      * Cache storage backend. Defaults to PVC-based caching (using the
      * `workspace` property) when omitted.
      *
-     * Set to `{ type: 'gcs', bucket: '...' }` to store cache archives in
+     * Set to `gcs({ bucket, prefix? })` to store cache archives in
      * Google Cloud Storage instead of a PVC. Requires GKE Workload Identity.
      */
     backend?: CacheBackend;
@@ -401,6 +401,13 @@ export class TaskDef implements TaskLike {
         this.retries = opts.retries;
         this.timeout = opts.timeout;
         this.fanOut = opts.fanOut;
+        // Gating on a task's result (e.g. a change-detection task) auto-wires the
+        // producing task into the dependency graph — no manual `needs`.
+        if (opts.when instanceof Condition) {
+            for (const src of opts.when.sources()) {
+                if (!this.needs.includes(src)) this.needs.push(src);
+            }
+        }
         if (opts.fanOut) {
             const { over, as, from } = opts.fanOut;
             if (!this.params.includes(as) && !this.params.some((p) => p.name === as.name)) {
@@ -422,7 +429,7 @@ export class TaskDef implements TaskLike {
      * Synthesizes the Tekton Task resource into the given cdk8s scope.
      *
      * @param stepSecurityContext - Additional container-level security context fields merged on
-     *   top of `DEFAULT_STEP_SECURITY_CONTEXT`. Supplied by `TektonProject` from the project's
+     *   top of `DEFAULT_STEP_SECURITY_CONTEXT`. Supplied by `TektonicProject` from the project's
      *   `defaultStepSecurityContext` option. The task's own `stepTemplate.securityContext` (if
      *   any) takes precedence over this via the spread in stepTemplate.
      * @param projectDefaultLanguage - Project-level default scripting language, used for

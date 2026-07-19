@@ -2,10 +2,11 @@ import {
     Param,
     Task,
     GitPipeline,
-    TektonProject,
+    TektonicProject,
     TRIGGER_EVENTS,
     GitHubStatusReporter,
     DEFAULT_BASE_IMAGE,
+    gcs,
 } from "../src";
 
 // ─── Images ──────────────────────────────────────────────────────────────────
@@ -14,10 +15,13 @@ const syftImage = "ghcr.io/pfenerty/apko-cicd/syft:1.42.3";
 const grypeImage = "ghcr.io/pfenerty/apko-cicd/grype:0.110.0";
 
 // ─── Params ──────────────────────────────────────────────────────────────────
-const refParam = new Param({ name: "ref", type: "string" });
+// PAC binds `source-branch` to {{ source_branch }} — the normalized branch name.
+const sourceBranchParam = new Param({ name: "source-branch", type: "string" });
 
 // ─── Status reporter ─────────────────────────────────────────────────────────
-const statusReporter = new GitHubStatusReporter();
+// Under PAC, reuse the git-auth token via the pod env (see podTemplateEnv below)
+// instead of injecting a separate github-token secret per step.
+const statusReporter = new GitHubStatusReporter({ skipTokenInjection: true });
 
 // ─── Cache backend ──────────────────────────────────────────────────────────
 // GCS bucket for caching build artifacts. Requires Workload Identity on GKE.
@@ -32,7 +36,7 @@ const npmTest = new Task({
             name: "npm",
             key: ["package-lock.json"],
             paths: ["node_modules"],
-            backend: { type: "gcs", bucket: gcsBucket, prefix: "npm/" },
+            backend: gcs({ bucket: gcsBucket, prefix: "npm/" }),
             compress: true,
             workingDir: "$(workspaces.workspace.path)",
         },
@@ -59,7 +63,7 @@ const npmBuild = new Task({
             name: "npm",
             key: ["package-lock.json"],
             paths: ["node_modules"],
-            backend: { type: "gcs", bucket: gcsBucket, prefix: "npm/" },
+            backend: gcs({ bucket: gcsBucket, prefix: "npm/" }),
             compress: true,
             workingDir: "$(workspaces.workspace.path)",
         },
@@ -79,14 +83,14 @@ npm run build; EC=$?; echo $EC > /tekton/home/.exit-code; exit $EC`,
 
 const anchoreScann = new Task({
     name: "anchore-scan",
-    params: [refParam],
+    params: [sourceBranchParam],
     statusReporter,
     caches: [
         {
             name: "grype-db",
             key: [],
             paths: ["grype-db"],
-            backend: { type: "gcs", bucket: gcsBucket, prefix: "grype/" },
+            backend: gcs({ bucket: gcsBucket, prefix: "grype/" }),
             compress: true,
             forceSave: true,
             maxEntries: 1,
@@ -151,14 +155,8 @@ if ("scan.sarif" | path exists) {
         {
             name: "upload-sarif",
             image: DEFAULT_BASE_IMAGE,
-            env: [
-                {
-                    name: "GITHUB_TOKEN",
-                    valueFrom: {
-                        secretKeyRef: { name: "github-token", key: "token" },
-                    },
-                },
-            ],
+            // GITHUB_TOKEN is provided at the PipelineRun pod level via podTemplateEnv
+            // (PAC's {{ git_auth_secret }}) — see the TektonicProject config below.
             script: `#!/usr/bin/env nu
 def log [msg: string] {
   print $"[(date now | format date '%H:%M:%S')] upload-sarif: ($msg)"
@@ -174,7 +172,7 @@ if not ("scan.sarif" | path exists) or (ls scan.sarif | get size.0) == 0B {
   exit 0
 }
 
-let ref_raw = "$(params.ref)"
+let ref_raw = "$(params.source-branch)"
 let ref = if ($ref_raw | str starts-with "refs/") { $ref_raw } else { $"refs/heads/($ref_raw)" }
 log $"ref: ($ref)"
 
@@ -208,30 +206,35 @@ try {
 // ─── Pipelines ───────────────────────────────────────────────────────────────
 const pushPipeline = new GitPipeline({
     name: "npm-push",
-    triggers: [TRIGGER_EVENTS.PUSH],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
     tasks: [npmTest, anchoreScann],
 });
 
 const prPipeline = new GitPipeline({
     name: "npm-pull-request",
-    triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST }] },
     tasks: [npmTest, npmBuild, anchoreScann],
 });
 
 // ─── Synthesize ──────────────────────────────────────────────────────────────
-new TektonProject({
+// In-repo PAC PipelineRun templates under .tektonic/, read by the PAC operator.
+// The PipelineRun ServiceAccount ("tekton-triggers") is expected to be pre-created
+// and annotated for GKE Workload Identity (for GCS cache access) out of band.
+new TektonicProject({
     name: "tektonic",
     namespace: "tektonic-ci",
     pipelines: [pushPipeline, prPipeline],
     outdir: ".tektonic",
     workspaceStorageSize: "3Gi",
-    webhookSecretRef: {
-        secretName: "github-webhook-secret",
-        secretKey: "secret",
-    },
-    gitRefParam: "ref",
-    serviceAccountAnnotations: {
-        "iam.gke.io/gcp-service-account":
-            "tekton-ci-cache@default-350219.iam.gserviceaccount.com",
-    },
+    repository: { url: "https://github.com/pfenerty/tektonic" },
+    // Provide the GitHub token (for status reporting + SARIF upload) via PAC's git-auth
+    // secret at the pod level, so every step sees GITHUB_TOKEN.
+    podTemplateEnv: [
+        {
+            name: "GITHUB_TOKEN",
+            valueFrom: {
+                secretKeyRef: { name: "{{ git_auth_secret }}", key: "git-provider-token" },
+            },
+        },
+    ],
 });

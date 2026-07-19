@@ -16,6 +16,8 @@ import {
   GIT_BRANCH_REF,
 } from './condition';
 import { Param } from './param';
+import { Result } from './result';
+import { Task } from './task';
 
 describe('condition constructors', () => {
   it('equals compiles to a classic in clause with the handle string', () => {
@@ -90,11 +92,11 @@ describe('composition', () => {
 });
 
 describe('branch helpers', () => {
-  it('onBranch references the well-known git-clone branch result (classic)', () => {
+  it('onBranch references the normalized source-branch param (classic)', () => {
     expect(onBranch('main').compile()).toEqual([
       { input: GIT_BRANCH_REF, operator: 'in', values: ['main'] },
     ]);
-    expect(GIT_BRANCH_REF).toBe('$(tasks.git-clone.results.branch)');
+    expect(GIT_BRANCH_REF).toBe('$(params.source-branch)');
   });
 
   it('onBranches lists all branches', () => {
@@ -107,6 +109,33 @@ describe('branch helpers', () => {
     expect(onBranchMatching('^(main|release/.*)$').compile()).toEqual([
       { cel: `'${GIT_BRANCH_REF}'.matches('^(main|release/.*)$')` },
     ]);
+  });
+});
+
+describe('sources()', () => {
+  const makeBoundResult = () => {
+    const r = new Result({ name: 'changed' });
+    const owner = new Task({ name: 'detect', results: [r], steps: [{ name: 'd', image: 'alpine' }] });
+    return { r, owner };
+  };
+
+  it('is empty for a string-handle condition', () => {
+    expect(equals('$(params.x)', 'a').sources()).toEqual([]);
+  });
+
+  it('captures the producing task when the handle is a bound Result', () => {
+    const { r, owner } = makeBoundResult();
+    expect(equals(r, 'true').sources()).toEqual([owner]);
+    expect(matches(r, 'a.*').sources()).toEqual([owner]);
+  });
+
+  it('propagates and de-duplicates through and/or/not', () => {
+    const { r, owner } = makeBoundResult();
+    expect(and(onBranch('main'), equals(r, 'true')).sources()).toEqual([owner]);
+    expect(or(onBranch('main'), equals(r, 'true')).sources()).toEqual([owner]);
+    expect(not(equals(r, 'true')).sources()).toEqual([owner]);
+    // same source referenced twice → de-duplicated
+    expect(and(equals(r, 'true'), equals(r, 'true')).sources()).toEqual([owner]);
   });
 });
 

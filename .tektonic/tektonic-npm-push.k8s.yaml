@@ -1,0 +1,114 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    pipelinesascode.tekton.dev/max-keep-runs: "5"
+    pipelinesascode.tekton.dev/on-event: "[push]"
+    pipelinesascode.tekton.dev/on-target-branch: "[*]"
+    pipelinesascode.tekton.dev/task: "[.tektonic/tasks/set-status-pending-npm-push.k8s.yaml, .tektonic/tasks/git-clone.k8s.yaml, .tektonic/tasks/test-npm.k8s.yaml, .tektonic/tasks/anchore-scan.k8s.yaml, .tektonic/tasks/set-status-pending-npm-pull-request.k8s.yaml, .tektonic/tasks/build-npm.k8s.yaml]"
+  name: tektonic-npm-push
+spec:
+  params:
+    - name: project-name
+      value: "{{ repo_name }}"
+    - name: repo-full-name
+      value: "{{ repo_owner }}/{{ repo_name }}"
+    - name: source-branch
+      value: "{{ source_branch }}"
+    - name: revision
+      value: "{{ revision }}"
+    - name: url
+      value: "{{ repo_url }}"
+  pipelineSpec:
+    params:
+      - name: project-name
+        type: string
+      - name: repo-full-name
+        type: string
+      - name: source-branch
+        type: string
+      - name: revision
+        type: string
+      - name: url
+        type: string
+    tasks:
+      - name: set-status-pending-npm-push
+        params:
+          - name: repo-full-name
+            value: $(params.repo-full-name)
+          - name: revision
+            value: $(params.revision)
+        runAfter:
+          - git-clone
+        taskRef:
+          kind: Task
+          name: tektonic-set-status-pending-npm-push
+      - name: git-clone
+        params:
+          - name: url
+            value: $(params.url)
+          - name: revision
+            value: $(params.revision)
+        taskRef:
+          kind: Task
+          name: tektonic-git-clone
+        workspaces:
+          - name: workspace
+            workspace: workspace
+      - name: test-npm
+        params:
+          - name: repo-full-name
+            value: $(params.repo-full-name)
+          - name: revision
+            value: $(params.revision)
+        runAfter:
+          - set-status-pending-npm-push
+        taskRef:
+          kind: Task
+          name: tektonic-test-npm
+        workspaces:
+          - name: workspace
+            workspace: workspace
+      - name: anchore-scan
+        params:
+          - name: source-branch
+            value: $(params.source-branch)
+          - name: repo-full-name
+            value: $(params.repo-full-name)
+          - name: revision
+            value: $(params.revision)
+        runAfter:
+          - set-status-pending-npm-push
+        taskRef:
+          kind: Task
+          name: tektonic-anchore-scan
+        workspaces:
+          - name: workspace
+            workspace: workspace
+    workspaces:
+      - name: workspace
+  taskRunTemplate:
+    podTemplate:
+      env:
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: git-provider-token
+              name: "{{ git_auth_secret }}"
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+    serviceAccountName: tekton-triggers
+  workspaces:
+    - name: workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 3Gi

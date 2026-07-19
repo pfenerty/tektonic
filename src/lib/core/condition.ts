@@ -1,4 +1,6 @@
 import type { WhenExpression } from "./pipeline-task";
+import type { TaskLike } from "./task";
+import { Result } from "./result";
 
 /**
  * Anything that renders to a Tekton interpolation expression string.
@@ -8,6 +10,11 @@ import type { WhenExpression } from "./pipeline-task";
  * hand-written `$(...)` strings.
  */
 export type Expressable = string | { toString(): string };
+
+/** If `handle` is a task-bound {@link Result}, returns its producing task for auto-wiring. */
+function sourceOf(handle: Expressable): TaskLike | undefined {
+    return handle instanceof Result ? handle.owner : undefined;
+}
 
 /**
  * A CEL-based `when` guard. Emitted as `{ cel: "<expr>" }` on a pipeline task.
@@ -42,10 +49,25 @@ export abstract class Condition {
     /** Compiles this condition to Tekton `when` clauses. */
     abstract compile(): WhenClause[];
 
+    /**
+     * Tasks whose results this condition references. A `Task` using this condition
+     * as its `when` auto-adds these to `needs`, so gating on a task's result (e.g.
+     * a change-detection or decision task) wires the dependency edge with no manual
+     * `needs`. Defaults to none.
+     */
+    sources(): TaskLike[] {
+        return [];
+    }
+
     /** Combines this condition with others via logical AND (concatenated `when` clauses). */
     and(...others: Condition[]): Condition {
         return new AndCondition([this, ...others]);
     }
+}
+
+/** De-duplicates a list of task nodes preserving order. */
+function dedupeSources(tasks: TaskLike[]): TaskLike[] {
+    return [...new Set(tasks)];
 }
 
 /** A single classic `in`/`notin` guard. */
@@ -54,21 +76,31 @@ class CmpCondition extends Condition {
         private readonly input: string,
         private readonly operator: "in" | "notin",
         private readonly values: string[],
+        private readonly _sources: TaskLike[] = [],
     ) {
         super();
     }
     compile(): WhenClause[] {
         return [{ input: this.input, operator: this.operator, values: this.values }];
     }
+    sources(): TaskLike[] {
+        return this._sources;
+    }
 }
 
 /** A single CEL guard. */
 class CelCondition extends Condition {
-    constructor(private readonly expr: string) {
+    constructor(
+        private readonly expr: string,
+        private readonly _sources: TaskLike[] = [],
+    ) {
         super();
     }
     compile(): WhenClause[] {
         return [{ cel: this.expr }];
+    }
+    sources(): TaskLike[] {
+        return this._sources;
     }
 }
 
@@ -80,23 +112,26 @@ class AndCondition extends Condition {
     compile(): WhenClause[] {
         return this.parts.flatMap((p) => p.compile());
     }
+    sources(): TaskLike[] {
+        return dedupeSources(this.parts.flatMap((p) => p.sources()));
+    }
 }
 
 /** True when `input` equals `value`. Classic guard — no feature flag required. */
 export const equals = (input: Expressable, value: string): Condition =>
-    new CmpCondition(String(input), "in", [value]);
+    new CmpCondition(String(input), "in", [value], sourceList(input));
 
 /** True when `input` does not equal `value`. Classic guard — no feature flag required. */
 export const notEquals = (input: Expressable, value: string): Condition =>
-    new CmpCondition(String(input), "notin", [value]);
+    new CmpCondition(String(input), "notin", [value], sourceList(input));
 
 /** True when `input` is one of `values`. Classic guard — no feature flag required. */
 export const isIn = (input: Expressable, values: string[]): Condition =>
-    new CmpCondition(String(input), "in", values);
+    new CmpCondition(String(input), "in", values, sourceList(input));
 
 /** True when `input` is not any of `values`. Classic guard — no feature flag required. */
 export const notIn = (input: Expressable, values: string[]): Condition =>
-    new CmpCondition(String(input), "notin", values);
+    new CmpCondition(String(input), "notin", values, sourceList(input));
 
 /**
  * True when `input` matches the RE2 regular expression `pattern`.
@@ -108,7 +143,13 @@ export const notIn = (input: Expressable, values: string[]): Condition =>
  * Note: single quotes in `pattern` are not escaped; keep patterns quote-free.
  */
 export const matches = (input: Expressable, pattern: string): Condition =>
-    new CelCondition(`'${input}'.matches('${pattern}')`);
+    new CelCondition(`'${input}'.matches('${pattern}')`, sourceList(input));
+
+/** Returns `[owner]` when `handle` is a task-bound Result, else `[]`. */
+function sourceList(handle: Expressable): TaskLike[] {
+    const s = sourceOf(handle);
+    return s ? [s] : [];
+}
 
 /** Logical AND of the given conditions (concatenated `when` clauses). */
 export const and = (...conditions: Condition[]): Condition => new AndCondition(conditions);
@@ -132,7 +173,8 @@ export const or = (...conditions: Condition[]): Condition => {
         .map((c) => c.compile().map(toCel).join(" && "))
         .map((branch) => `(${branch})`)
         .join(" || ");
-    return new CelCondition(expr);
+    const sources = dedupeSources(conditions.flatMap((c) => c.sources()));
+    return new CelCondition(expr, sources);
 };
 
 /**
@@ -145,9 +187,10 @@ export const or = (...conditions: Condition[]): Condition => {
  */
 export const not = (condition: Condition): Condition => {
     const clauses = condition.compile();
+    const sources = condition.sources();
     if (clauses.length === 1 && !("cel" in clauses[0])) {
         const e = clauses[0];
-        return new CmpCondition(e.input, e.operator === "in" ? "notin" : "in", e.values);
+        return new CmpCondition(e.input, e.operator === "in" ? "notin" : "in", e.values, sources);
     }
     const toCel = (clause: WhenClause): string => {
         if ("cel" in clause) return clause.cel;
@@ -155,7 +198,7 @@ export const not = (condition: Condition): Condition => {
         const member = `('${clause.input}' in [${list}])`;
         return clause.operator === "in" ? member : `!${member}`;
     };
-    return new CelCondition(`!(${clauses.map(toCel).join(" && ")})`);
+    return new CelCondition(`!(${clauses.map(toCel).join(" && ")})`, sources);
 };
 
 /** Coerces a `when` attribute (a {@link Condition} or raw clauses) to `when` clauses. */
@@ -163,11 +206,12 @@ export const normalizeWhen = (when: Condition | WhenClause[]): WhenClause[] =>
     when instanceof Condition ? when.compile() : when;
 
 /**
- * Well-known reference to the branch/ref checked out by {@link GitPipeline}'s
- * `git-clone` task. The pipeline-task name is always `git-clone` (unprefixed), so
- * this expression is stable at authoring time — branch rules need no pipeline handle.
+ * Well-known reference to the normalized branch name (e.g. `main`) for the current
+ * pipeline run. {@link TektonicProject} plumbs it as the `source-branch` pipeline param
+ * via PAC's `{{ source_branch }}` variable, so branch rules reference it at authoring
+ * time without a pipeline handle.
  */
-export const GIT_BRANCH_REF = "$(tasks.git-clone.results.branch)";
+export const GIT_BRANCH_REF = "$(params.source-branch)";
 
 /** True only on the given branch. Classic guard — no feature flag required. */
 export const onBranch = (name: string): Condition => equals(GIT_BRANCH_REF, name);

@@ -2,7 +2,7 @@ import {
     Workspace,
     Task,
     GitPipeline,
-    TektonProject,
+    TektonicProject,
     TRIGGER_EVENTS,
 } from "../src";
 
@@ -73,14 +73,14 @@ const lint = new Task({
 const pushPipeline = new GitPipeline({
     name: "go-push",
     workspace,
-    triggers: [TRIGGER_EVENTS.PUSH],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
     tasks: [goTest, goBuild, sbom, vulnScan],
 });
 
 const prPipeline = new GitPipeline({
     name: "go-pull-request",
     workspace,
-    triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST }] },
     tasks: [goTest, sbom, vulnScan],
 });
 
@@ -91,12 +91,10 @@ const lintPipeline = new GitPipeline({
 });
 
 // ─── Synthesize ──────────────────────────────────────────────────────────────
-new TektonProject({
+new TektonicProject({
     name: "homelab",
     namespace: "tekton-builds",
     pipelines: [pushPipeline, prPipeline, lintPipeline],
-    webhookSecretRef: {
-        secretName: "github-webhook-secret",
-        secretKey: "secret",
-    },
+    outdir: ".tekton",
+    repository: { url: "https://github.com/pfenerty/homelab" },
 });

@@ -22,7 +22,7 @@ configuration needed:
 
 ```typescript
 const pipeline = new GitPipeline({
-  triggers: [TRIGGER_EVENTS.PUSH],
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
   tasks: [build],
   // CHAINS-GIT_URL / CHAINS-GIT_COMMIT emitted automatically
 });
@@ -31,7 +31,7 @@ const pipeline = new GitPipeline({
 Opt out with `chainsProvenance: false` if you don't want them:
 
 ```typescript
-new GitPipeline({ triggers: [TRIGGER_EVENTS.PUSH], tasks: [build], chainsProvenance: false });
+new GitPipeline({ trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks: [build], chainsProvenance: false });
 ```
 
 ## Build subjects: `ChainsImage`
@@ -82,19 +82,17 @@ Chains reads a few `chains.tekton.dev/*` annotations off the runs it observes (m
 exposes a generic annotations escape hatch at every layer:
 
 - **Per task** — `Task.annotations` sets metadata on the generated `Task`.
-- **PAC** — `PACProject.pipelineRunAnnotations` merges into every generated `PipelineRun`
-  (alongside the PAC annotations).
-- **Trigger-based** — `TektonProject.pipelineRunAnnotations` threads into the `PipelineRun`
-  template the trigger EventListener creates at runtime.
+`TektonicProject.pipelineRunAnnotations` merges into every generated `PipelineRun` template
+(alongside the PAC annotations), so Chains controls apply to every run.
 
 ```typescript
-new PACProject({
+new TektonicProject({
   namespace: 'ci',
   pipelines: [pushPipeline],
   pipelineRunAnnotations: { 'chains.tekton.dev/transparency-upload': 'true' },
 });
 
-new TektonProject({
+new TektonicProject({
   name: 'app', namespace: 'ci', pipelines: [pushPipeline],
   pipelineRunAnnotations: { 'chains.tekton.dev/transparency-upload': 'true' },
 });
@@ -116,8 +114,8 @@ definition:
 - The signing key secret.
 - **Registry push credentials for OCI storage.** With `artifacts.oci.storage: oci`, Chains
   attaches signatures and attestations to your images in the registry. It authenticates as the
-  **TaskRun's ServiceAccount** — i.e. the SA your run executes under (`PACProject` /
-  `TektonProject` `serviceAccountName`, default `default`), *not* the Chains controller's SA.
+  **TaskRun's ServiceAccount** — i.e. the SA your run executes under (`TektonicProject` /
+  `TektonicProject` `serviceAccountName`, default `default`), *not* the Chains controller's SA.
   Link a registry-push secret to that SA in your cluster GitOps, e.g.:
 
   ```yaml

@@ -1,22 +1,20 @@
 # Pipelines as Code (PAC)
 
-Tektonic has two synthesizers. [`TektonProject`](agent-guide.md#tektonproject) generates
-cluster-deployed `Pipeline` resources plus the full webhook trigger stack (EventListener,
-TriggerBindings/Templates, RBAC). **`PACProject`** instead generates
+[`TektonicProject`](agent-guide.md#tektonicproject) is Tektonic's synthesizer. It generates
 [Pipelines as Code](https://pipelinesascode.tekton.dev/) artifacts that live in your repo and
-are read directly from the pushed commit at runtime — no EventListener, no Flux sync race, and
-the pipeline that runs is always exactly what was committed.
+are read directly from the pushed commit at runtime — no EventListener, no RBAC, no Flux sync
+race, and the pipeline that runs is always exactly what was committed. PAC also handles webhook
+delivery, event matching, status reporting, and multi-provider support (GitHub, GitLab,
+Bitbucket, Gitea) for you.
 
-Use `PACProject` when PAC is already installed in your cluster and you want pipelines defined
-in-repo under `.tekton/`. Use `TektonProject` when you want Tektonic to own the trigger
-infrastructure itself.
+**Requires** the PAC operator installed in the cluster.
 
 ## What it generates
 
 ```typescript
-import { GitPipeline, PACProject, TRIGGER_EVENTS } from '@pfenerty/tektonic';
+import { GitPipeline, TektonicProject, TRIGGER_EVENTS } from '@pfenerty/tektonic';
 
-new PACProject({
+new TektonicProject({
   name: 'ocidex',
   namespace: 'ocidex-ci',
   pipelines: [pushPipeline, prPipeline, tagPipeline],
@@ -30,36 +28,73 @@ This writes:
 - `<outdir>/tasks/<task>.k8s.yaml` — one `Task` file per unique task across all pipelines
   (including `finally` tasks).
 - `<outdir>/<pipeline>.k8s.yaml` — one PAC-annotated `PipelineRun` template per pipeline that
-  has triggers. The pipeline spec is **inlined** into the PipelineRun (`pipelineSpec`), and the
+  has a `trigger`. The pipeline spec is **inlined** into the PipelineRun (`pipelineSpec`), and the
   task files are referenced via the `pipelinesascode.tekton.dev/task` annotation.
 
-Only pipelines with `triggers` are emitted.
+Only pipelines with a `trigger` are emitted.
 
-## Event and branch mapping
+## Trigger & rules
 
-Pipeline `triggers` map to PAC's `on-event` annotation, and `onTargetBranch` maps to
-`on-target-branch`:
-
-| `TRIGGER_EVENTS` | PAC `on-event` |
-|------------------|----------------|
-| `PUSH`           | `push` |
-| `PULL_REQUEST`   | `pull_request` |
-| `TAG`            | `push` (with `on-target-branch: [refs/tags/*]`) |
+A pipeline's `trigger` decides **whether the whole PipelineRun fires** for an event. It's a list
+of **rules** (OR-ed together); each rule names its own event(s) and branch/path filters (which AND
+together). This is *pipeline-level* — distinct from the job-level `when`/`onChanges`/`fanOut` rules
+that gate individual tasks *inside* a run (see the [agent guide](agent-guide.md#rules--conditions)).
 
 ```typescript
-const pushPipeline = new GitPipeline({
-  name: 'app-push',
-  triggers: [TRIGGER_EVENTS.PUSH],
-  onTargetBranch: 'main',   // → on-target-branch: [main]; defaults to '*'
-  tasks: [test, build],
+// simplest — every push:
+const push = new GitPipeline({ name: 'push', trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks });
+
+// PRs merging into main, only when src changed:
+const ci = new GitPipeline({
+  name: 'ci',
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST, branch: 'main', pathsChanged: ['src/**'] }] },
+  tasks,
+});
+
+// compound — always on main, feature branches only when src/deps changed:
+const monorepo = new GitPipeline({
+  name: 'monorepo',
+  trigger: {
+    rules: [
+      { on: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST], branch: 'main' },
+      { on: TRIGGER_EVENTS.PUSH,         branch: 'feature/*',       pathsChanged: ['src/**'] },
+      { on: TRIGGER_EVENTS.PULL_REQUEST, sourceBranch: 'feature/*', pathsChanged: ['src/**'] },
+    ],
+    comment: '^/ci',           // also start on a `/ci` PR comment
+    cancelInProgress: true,    // supersede older runs of this PR
+  },
+  tasks,
 });
 ```
 
-TAG pipelines always target `refs/tags/*` regardless of `onTargetBranch`.
+**Rule fields** (`TriggerRule`):
+
+| Field | Meaning | Maps to |
+|-------|---------|---------|
+| `on` | event(s) this rule matches (required) | PAC `event` / `on-event` |
+| `branch` | the branch the event concerns — **pushed** branch (push) or **target/into** branch (PR). Glob(s) | `on-target-branch` / `target_branch` |
+| `sourceBranch` | PR **head/from** branch. Glob(s) | `source_branch` (CEL only) |
+| `pathsChanged` | run only if changed files match these globs | `on-path-changed` / `files.all` |
+| `pathsIgnored` | skip when only these changed | `on-path-change-ignore` |
+| `cel` | raw PAC CEL fragment, AND-ed into the rule | — |
+
+**Trigger fields** (`PipelineTrigger`): `rules` (required), `comment` (`on-comment` regex),
+`labels` (`on-label`), `cancelInProgress` (`cancel-in-progress`), and `cel` (raw whole-expression
+`on-cel-expression`, used instead of `rules`).
+
+**Branch semantics.** `branch` is unambiguous because each rule names its event: for `push` it's the
+pushed branch; for `pull_request` it's the **target** (merge-into) branch. Use `sourceBranch` for the
+PR **head** (merge-from). A `TAG` rule always targets `refs/tags/*`.
+
+**How it compiles.** A single rule with only `on`/`branch`/`pathsChanged` emits discrete
+`on-event`/`on-target-branch`/`on-path-changed` annotations (no CEL). Anything compound — multiple
+rules, any `sourceBranch`, or `cel` — compiles to a single `on-cel-expression` (evaluated by the PAC
+operator; no Tekton feature flag). `comment`/`labels`/`cancelInProgress` always emit as their own
+annotations. TAG rules always target `refs/tags/*`.
 
 ## Param bindings
 
-PAC injects template variables at trigger time. `PACProject` binds well-known pipeline params to
+PAC injects template variables at trigger time. `TektonicProject` binds well-known pipeline params to
 those variables automatically, so a task that declares e.g. a `url` param receives the repo URL
 with no extra wiring:
 
@@ -73,7 +108,7 @@ with no extra wiring:
 
 `project-name`, `repo-full-name`, and `source-branch` are added as pipeline params
 automatically. `url` and `revision` are the params `GitPipeline` already creates for its
-git-clone task — so a `GitPipeline` + `PACProject` combination is wired end-to-end with no
+git-clone task — so a `GitPipeline` + `TektonicProject` combination is wired end-to-end with no
 manual params. Any param without a known binding is emitted with an empty value for you to fill
 in.
 
@@ -89,7 +124,7 @@ Each `PipelineRun` gets workspace bindings derived from the inlined spec:
 GCS-backed caches need no PVC and are filtered out of the workspace bindings.
 
 ```typescript
-new PACProject({
+new TektonicProject({
   name: 'ocidex',
   namespace: 'ocidex-ci',
   pipelines: [pushPipeline, prPipeline, tagPipeline],

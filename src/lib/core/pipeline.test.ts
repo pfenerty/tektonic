@@ -71,7 +71,7 @@ describe('Pipeline', () => {
   });
 
   it('names from single trigger', () => {
-    const pipeline = new Pipeline({ triggers: [TRIGGER_EVENTS.PUSH], tasks: [test] });
+    const pipeline = new Pipeline({ trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks: [test] });
     expect(pipeline.name).toBe('push-pipeline');
   });
 
