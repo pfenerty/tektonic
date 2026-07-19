@@ -56,7 +56,7 @@ export interface GitPipelineOptions extends PipelineOptions {
  *
  * const pipeline = new GitPipeline({
  *   workspace,
- *   triggers: [TRIGGER_EVENTS.PUSH],
+ *   trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
  *   tasks: [testTask, buildTask],
  * });
  * // Execution order: git-clone → test → build

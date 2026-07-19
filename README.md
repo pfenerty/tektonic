@@ -60,7 +60,7 @@ const test = new Task({
 });
 
 const pushPipeline = new GitPipeline({
-  triggers: [TRIGGER_EVENTS.PUSH],
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
   workspace,
   tasks: [test],
   // git-clone is auto-created; test runs after it automatically

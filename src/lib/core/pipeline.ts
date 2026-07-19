@@ -5,59 +5,27 @@ import { Param } from './param';
 import { Workspace } from './workspace';
 import { Task, TaskLike, TaskDef } from './task';
 import { TRIGGER_EVENTS } from './trigger-events';
-
-/**
- * PAC pipeline-level matching config (emitted as `pipelinesascode.tekton.dev/*` annotations).
- *
- * Decides whether the whole `PipelineRun` fires for an event — orthogonal to the job-level
- * rules (`when`/`onChanges`/`fanOut`) that gate individual tasks *inside* a run.
- */
-export interface PacMatch {
-  /**
-   * Raw PAC CEL expression (`on-cel-expression`). When set it **replaces** event/branch matching,
-   * so include the event/branch checks yourself, e.g.
-   * `event == "pull_request" && target_branch == "main"`.
-   */
-  cel?: string;
-  /** Path globs — start the pipeline only if matching files changed (`on-path-changed`). */
-  pathsChanged?: string[];
-  /** Path globs to ignore (`on-path-change-ignore`). */
-  pathsIgnored?: string[];
-  /** Regex — start the pipeline on a matching PR comment, e.g. `'^/integration'` (`on-comment`). */
-  onComment?: string;
-  /** Start the pipeline when the PR carries any of these labels (`on-label`). */
-  onLabel?: string[];
-  /** Cancel an in-progress run of this pipeline when a newer event arrives (`cancel-in-progress`). */
-  cancelInProgress?: boolean;
-}
+import { triggerEvents } from './pac-trigger';
+import type { PipelineTrigger } from './pac-trigger';
 
 /** Options for constructing a {@link Pipeline}. */
 export interface PipelineOptions {
   /**
-   * Pipeline name. Auto-generated from the trigger type when omitted
-   * (e.g. `"push-pipeline"` for a single push trigger).
+   * Pipeline name. Auto-generated from the trigger event when omitted
+   * (e.g. `"push-pipeline"` for a single-event trigger).
    */
   name?: string;
-  /** Trigger events that should start this pipeline (mapped to PAC's `on-event` by {@link TektonicProject}). */
-  triggers?: TRIGGER_EVENTS[];
+  /**
+   * Firing config — when this pipeline runs (events, branches, paths, comment/label filters).
+   * See {@link PipelineTrigger}. A pipeline without a `trigger` is not emitted.
+   */
+  trigger?: PipelineTrigger;
   /** Top-level tasks. Transitive dependencies are auto-discovered via `task.needs`. */
   tasks: TaskLike[];
   /** Tasks that run unconditionally after all regular tasks complete or fail. */
   finallyTasks?: TaskLike[];
   /** Additional pipeline-level params not tied to any specific task. */
   params?: Param[];
-  /**
-   * Target branch filter used by {@link TektonicProject} for the
-   * `pipelinesascode.tekton.dev/on-target-branch` annotation.
-   * Accepts a glob pattern. Defaults to `"*"` (all branches).
-   * Ignored for `TRIGGER_EVENTS.TAG` pipelines, which always target `"refs/tags/*"`.
-   */
-  onTargetBranch?: string;
-  /**
-   * PAC pipeline-level matching (path/comment/label/CEL filters + cancel-in-progress).
-   * See {@link PacMatch}.
-   */
-  match?: PacMatch;
   /**
    * Overall PipelineRun timeout as a Go duration string (e.g. `"2h"`, `"90m"`).
    * Emitted by {@link TektonicProject} as `spec.timeouts.pipeline`. When unset, Tekton's
@@ -75,21 +43,16 @@ export interface PipelineOptions {
  */
 export class Pipeline {
   readonly name: string;
-  /** Trigger events associated with this pipeline. */
-  readonly triggers: TRIGGER_EVENTS[];
+  /** Firing config (events, branches, paths, …), emitted as PAC annotations by TektonicProject. */
+  readonly trigger?: PipelineTrigger;
+  /** Trigger events associated with this pipeline (union of `trigger.rules[].on`). */
+  readonly events: TRIGGER_EVENTS[];
   /** Top-level tasks provided at construction. */
   readonly tasks: TaskLike[];
   /** All tasks including transitive dependencies discovered via `task.needs`. */
   readonly allTasks: TaskLike[];
   /** Tasks that run unconditionally after all regular tasks complete or fail. */
   readonly finallyTasks: TaskLike[];
-  /**
-   * Target branch filter for PAC's `on-target-branch` annotation.
-   * Defaults to `"*"`. Ignored for TAG pipelines, which always use `"refs/tags/*"`.
-   */
-  readonly onTargetBranch: string;
-  /** PAC pipeline-level matching config, emitted as `pipelinesascode.tekton.dev/*` annotations. */
-  readonly match?: PacMatch;
   /** Overall PipelineRun timeout (Go duration), emitted by TektonicProject. Unset = Tekton default. */
   readonly timeout?: string;
   private readonly extraParams: Param[];
@@ -99,18 +62,17 @@ export class Pipeline {
   private static _counter = 0;
 
   constructor(opts: PipelineOptions) {
+    this.trigger = opts.trigger;
+    this.events = opts.trigger ? triggerEvents(opts.trigger) : [];
     if (opts.name) {
       this.name = opts.name;
-    } else if (opts.triggers?.length === 1) {
-      this.name = `${opts.triggers[0].replace('_', '-')}-pipeline`;
+    } else if (this.events.length === 1) {
+      this.name = `${this.events[0].replace('_', '-')}-pipeline`;
     } else {
       this.name = `pipeline-${Pipeline._counter++}`;
     }
-    this.triggers = opts.triggers ?? [];
     this.tasks = opts.tasks;
     this.finallyTasks = opts.finallyTasks ?? [];
-    this.onTargetBranch = opts.onTargetBranch ?? '*';
-    this.match = opts.match;
     this.timeout = opts.timeout;
     this.extraParams = opts.params ?? [];
 

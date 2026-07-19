@@ -77,10 +77,18 @@ new TektonicProject({
     pipelines: [
         new GitPipeline({
             name: "ci",
-            triggers: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST],
-            // PAC pipeline-level matching: supersede older PR runs, and allow /ci re-runs.
+            // Pipeline-level firing rules (OR-ed): always when targeting/pushing main; on feature
+            // branches only when src/deps changed. Plus /ci re-runs and supersede older PR runs.
             // (Job-level `when`/`onChanges`/`fanOut` on the tasks are orthogonal to this.)
-            match: { cancelInProgress: true, onComment: "^/ci" },
+            trigger: {
+                rules: [
+                    { on: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST], branch: "main" },
+                    { on: TRIGGER_EVENTS.PUSH, branch: "feature/*", pathsChanged: ["src/**", "package.json"] },
+                    { on: TRIGGER_EVENTS.PULL_REQUEST, sourceBranch: "feature/*", pathsChanged: ["src/**", "package.json"] },
+                ],
+                comment: "^/ci",
+                cancelInProgress: true,
+            },
             tasks: [lint, test, integration, detect, deploy], // clean list — rules/fan-out are on the jobs
         }),
     ],

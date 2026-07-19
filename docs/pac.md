@@ -28,67 +28,69 @@ This writes:
 - `<outdir>/tasks/<task>.k8s.yaml` — one `Task` file per unique task across all pipelines
   (including `finally` tasks).
 - `<outdir>/<pipeline>.k8s.yaml` — one PAC-annotated `PipelineRun` template per pipeline that
-  has triggers. The pipeline spec is **inlined** into the PipelineRun (`pipelineSpec`), and the
+  has a `trigger`. The pipeline spec is **inlined** into the PipelineRun (`pipelineSpec`), and the
   task files are referenced via the `pipelinesascode.tekton.dev/task` annotation.
 
-Only pipelines with `triggers` are emitted.
+Only pipelines with a `trigger` are emitted.
 
-## Event and branch mapping
+## Trigger & rules
 
-Pipeline `triggers` map to PAC's `on-event` annotation, and `onTargetBranch` maps to
-`on-target-branch`:
-
-| `TRIGGER_EVENTS` | PAC `on-event` |
-|------------------|----------------|
-| `PUSH`           | `push` |
-| `PULL_REQUEST`   | `pull_request` |
-| `TAG`            | `push` (with `on-target-branch: [refs/tags/*]`) |
+A pipeline's `trigger` decides **whether the whole PipelineRun fires** for an event. It's a list
+of **rules** (OR-ed together); each rule names its own event(s) and branch/path filters (which AND
+together). This is *pipeline-level* — distinct from the job-level `when`/`onChanges`/`fanOut` rules
+that gate individual tasks *inside* a run (see the [agent guide](agent-guide.md#rules--conditions)).
 
 ```typescript
-const pushPipeline = new GitPipeline({
-  name: 'app-push',
-  triggers: [TRIGGER_EVENTS.PUSH],
-  onTargetBranch: 'main',   // → on-target-branch: [main]; defaults to '*'
-  tasks: [test, build],
-});
-```
+// simplest — every push:
+const push = new GitPipeline({ name: 'push', trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks });
 
-TAG pipelines always target `refs/tags/*` regardless of `onTargetBranch`.
-
-## Matching (`match`)
-
-For richer *pipeline-level* matching, set `match` on a pipeline. It maps to PAC's
-`pipelinesascode.tekton.dev/*` annotations and decides whether the **whole PipelineRun** fires
-for an event. (This is distinct from the job-level `when`/`onChanges`/`fanOut` rules that gate
-individual tasks *inside* a run — see the [agent guide](agent-guide.md#rules--conditions).)
-
-```typescript
+// PRs merging into main, only when src changed:
 const ci = new GitPipeline({
   name: 'ci',
-  triggers: [TRIGGER_EVENTS.PULL_REQUEST],
-  onTargetBranch: 'main',
-  match: {
-    pathsChanged: ['src/**', 'package.json'], // start only when these change
-    onComment: '^/ci',                         // ...or on a `/ci` PR comment
-    cancelInProgress: true,                    // supersede older runs of this PR
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST, branch: 'main', pathsChanged: ['src/**'] }] },
+  tasks,
+});
+
+// compound — always on main, feature branches only when src/deps changed:
+const monorepo = new GitPipeline({
+  name: 'monorepo',
+  trigger: {
+    rules: [
+      { on: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST], branch: 'main' },
+      { on: TRIGGER_EVENTS.PUSH,         branch: 'feature/*',       pathsChanged: ['src/**'] },
+      { on: TRIGGER_EVENTS.PULL_REQUEST, sourceBranch: 'feature/*', pathsChanged: ['src/**'] },
+    ],
+    comment: '^/ci',           // also start on a `/ci` PR comment
+    cancelInProgress: true,    // supersede older runs of this PR
   },
-  tasks: [test, build],
+  tasks,
 });
 ```
 
-| `match` field | PAC annotation | Notes |
-|---------------|----------------|-------|
-| `cel` | `on-cel-expression` | Raw CEL escape hatch. **Replaces** `on-event`/`on-target-branch` — put the event/branch checks in the CEL yourself. |
-| `pathsChanged` | `on-path-changed` | Glob list; PAC computes the diff. |
-| `pathsIgnored` | `on-path-change-ignore` | Glob list. |
-| `onComment` | `on-comment` | Regex; pair with a `pull_request` trigger. |
-| `onLabel` | `on-label` | Label list; pair with a `pull_request` trigger. |
-| `cancelInProgress` | `cancel-in-progress` | Cancel a running instance when a newer event arrives. |
+**Rule fields** (`TriggerRule`):
 
-All fields except `cel` combine with `on-event`/`on-target-branch`. PAC's CEL namespace
-(`event`, `source_branch`, `target_branch`, `files.all`, …) differs from Tekton `when`-CEL, so
-`cel` takes a raw PAC expression, e.g.
-`event == "pull_request" && files.all.exists(f, f.matches("src/.*"))`.
+| Field | Meaning | Maps to |
+|-------|---------|---------|
+| `on` | event(s) this rule matches (required) | PAC `event` / `on-event` |
+| `branch` | the branch the event concerns — **pushed** branch (push) or **target/into** branch (PR). Glob(s) | `on-target-branch` / `target_branch` |
+| `sourceBranch` | PR **head/from** branch. Glob(s) | `source_branch` (CEL only) |
+| `pathsChanged` | run only if changed files match these globs | `on-path-changed` / `files.all` |
+| `pathsIgnored` | skip when only these changed | `on-path-change-ignore` |
+| `cel` | raw PAC CEL fragment, AND-ed into the rule | — |
+
+**Trigger fields** (`PipelineTrigger`): `rules` (required), `comment` (`on-comment` regex),
+`labels` (`on-label`), `cancelInProgress` (`cancel-in-progress`), and `cel` (raw whole-expression
+`on-cel-expression`, used instead of `rules`).
+
+**Branch semantics.** `branch` is unambiguous because each rule names its event: for `push` it's the
+pushed branch; for `pull_request` it's the **target** (merge-into) branch. Use `sourceBranch` for the
+PR **head** (merge-from). A `TAG` rule always targets `refs/tags/*`.
+
+**How it compiles.** A single rule with only `on`/`branch`/`pathsChanged` emits discrete
+`on-event`/`on-target-branch`/`on-path-changed` annotations (no CEL). Anything compound — multiple
+rules, any `sourceBranch`, or `cel` — compiles to a single `on-cel-expression` (evaluated by the PAC
+operator; no Tekton feature flag). `comment`/`labels`/`cancelInProgress` always emit as their own
+annotations. TAG rules always target `refs/tags/*`.
 
 ## Param bindings
 

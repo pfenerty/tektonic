@@ -206,13 +206,13 @@ try {
 // ─── Pipelines ───────────────────────────────────────────────────────────────
 const pushPipeline = new GitPipeline({
     name: "npm-push",
-    triggers: [TRIGGER_EVENTS.PUSH],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
     tasks: [npmTest, anchoreScann],
 });
 
 const prPipeline = new GitPipeline({
     name: "npm-pull-request",
-    triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST }] },
     tasks: [npmTest, npmBuild, anchoreScann],
 });
 

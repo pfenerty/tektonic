@@ -22,7 +22,7 @@ configuration needed:
 
 ```typescript
 const pipeline = new GitPipeline({
-  triggers: [TRIGGER_EVENTS.PUSH],
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
   tasks: [build],
   // CHAINS-GIT_URL / CHAINS-GIT_COMMIT emitted automatically
 });
@@ -31,7 +31,7 @@ const pipeline = new GitPipeline({
 Opt out with `chainsProvenance: false` if you don't want them:
 
 ```typescript
-new GitPipeline({ triggers: [TRIGGER_EVENTS.PUSH], tasks: [build], chainsProvenance: false });
+new GitPipeline({ trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks: [build], chainsProvenance: false });
 ```
 
 ## Build subjects: `ChainsImage`

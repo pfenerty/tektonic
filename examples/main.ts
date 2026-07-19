@@ -73,14 +73,14 @@ const lint = new Task({
 const pushPipeline = new GitPipeline({
     name: "go-push",
     workspace,
-    triggers: [TRIGGER_EVENTS.PUSH],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
     tasks: [goTest, goBuild, sbom, vulnScan],
 });
 
 const prPipeline = new GitPipeline({
     name: "go-pull-request",
     workspace,
-    triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST }] },
     tasks: [goTest, sbom, vulnScan],
 });
 

@@ -44,7 +44,7 @@ describe('TektonicProject', () => {
   it('constructs without error for a push pipeline', () => {
     const pipeline = new GitPipeline({
       name: 'my-push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       tasks: [buildTask, testTask],
     });
     expect(() =>
@@ -55,12 +55,12 @@ describe('TektonicProject', () => {
   it('constructs without error for push and PR pipelines', () => {
     const push = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       tasks: [buildTask],
     });
     const pr = new GitPipeline({
       name: 'pull-request',
-      triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST }] },
       tasks: [buildTask, testTask],
     });
     expect(() =>
@@ -71,7 +71,7 @@ describe('TektonicProject', () => {
   it('constructs with name prefix', () => {
     const pipeline = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       tasks: [buildTask],
     });
     expect(() =>
@@ -83,7 +83,7 @@ describe('TektonicProject', () => {
     const goCache = new Workspace({ name: 'go-cache' });
     const pipeline = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       tasks: [buildTask],
     });
     expect(() =>
@@ -106,7 +106,7 @@ describe('TektonicProject', () => {
   it('constructs with tag trigger', () => {
     const tag = new GitPipeline({
       name: 'release',
-      triggers: [TRIGGER_EVENTS.TAG],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.TAG }] },
       tasks: [buildTask],
     });
     expect(() =>
@@ -114,11 +114,10 @@ describe('TektonicProject', () => {
     ).not.toThrow();
   });
 
-  it('constructs with custom onTargetBranch', () => {
+  it('constructs with a custom target branch', () => {
     const pipeline = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
-      onTargetBranch: 'main',
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH, branch: 'main' }] },
       tasks: [buildTask],
     });
     expect(() =>
@@ -129,7 +128,7 @@ describe('TektonicProject', () => {
   it('constructs with custom pod security context', () => {
     const pipeline = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       tasks: [buildTask],
     });
     expect(() =>
@@ -144,7 +143,7 @@ describe('TektonicProject', () => {
   it('constructs with repoRelativePath override', () => {
     const pipeline = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       tasks: [buildTask],
     });
     expect(() =>
@@ -157,11 +156,10 @@ describe('TektonicProject', () => {
     ).not.toThrow();
   });
 
-  it('constructs with glob onTargetBranch for release branch trigger', () => {
+  it('constructs with a glob target branch', () => {
     const pipeline = new GitPipeline({
       name: 'release',
-      triggers: [TRIGGER_EVENTS.PUSH],
-      onTargetBranch: 'release/v*',
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH, branch: 'release/v*' }] },
       tasks: [buildTask],
     });
     expect(() =>
@@ -172,7 +170,7 @@ describe('TektonicProject', () => {
   it('PipelineRun params bind source-branch to {{ source_branch }}', () => {
     const pipeline = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       tasks: [buildTask],
     });
     new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
@@ -186,7 +184,7 @@ describe('TektonicProject', () => {
   it('merges pipelineRunAnnotations into the PipelineRun metadata alongside PAC annotations', () => {
     const pipeline = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       tasks: [buildTask],
     });
     new TektonicProject({
@@ -205,7 +203,7 @@ describe('TektonicProject', () => {
   it('emits spec.timeouts.pipeline when the pipeline sets a timeout', () => {
     const pipeline = new GitPipeline({
       name: 'push',
-      triggers: [TRIGGER_EVENTS.PUSH],
+      trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
       timeout: '2h',
       tasks: [buildTask],
     });
@@ -215,52 +213,42 @@ describe('TektonicProject', () => {
   });
 
   it('omits spec.timeouts when no timeout is set', () => {
-    const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
+    const pipeline = new GitPipeline({ name: 'push', trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks: [buildTask] });
     new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
     const pipelineRun = capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'PipelineRun');
     expect(pipelineRun.spec.timeouts).toBeUndefined();
   });
 
-  describe('PAC matching (match)', () => {
+  describe('trigger annotations on the PipelineRun', () => {
     const PAC = 'pipelinesascode.tekton.dev';
-    const annotationsFor = (match?: any) => {
-      const pipeline = new GitPipeline({
-        name: 'ci',
-        triggers: [TRIGGER_EVENTS.PULL_REQUEST],
-        onTargetBranch: 'main',
-        match,
-        tasks: [buildTask],
-      });
+    const annotationsFor = (trigger: any) => {
+      const pipeline = new GitPipeline({ name: 'ci', trigger, tasks: [buildTask] });
       new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
       const pr = capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'PipelineRun');
       return pr.metadata.annotations as Record<string, string>;
     };
 
-    it('emits on-event/on-target-branch when no match is set', () => {
-      const a = annotationsFor(undefined);
-      expect(a[`${PAC}/on-event`]).toBe('[pull_request]');
-      expect(a[`${PAC}/on-target-branch`]).toBe('[main]');
-    });
-
-    it('emits path/comment/label/cancel annotations and keeps on-event', () => {
+    it('single rule → discrete on-event / on-target-branch / on-path-changed', () => {
       const a = annotationsFor({
-        pathsChanged: ['src/**', 'package.json'],
-        pathsIgnored: ['docs/**'],
-        onComment: '^/ci',
-        onLabel: ['ci', 'ready'],
+        rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST, branch: 'main', pathsChanged: ['src/**'] }],
+        comment: '^/ci',
         cancelInProgress: true,
       });
       expect(a[`${PAC}/on-event`]).toBe('[pull_request]');
-      expect(a[`${PAC}/on-path-changed`]).toBe('[src/**, package.json]');
-      expect(a[`${PAC}/on-path-change-ignore`]).toBe('[docs/**]');
+      expect(a[`${PAC}/on-target-branch`]).toBe('[main]');
+      expect(a[`${PAC}/on-path-changed`]).toBe('[src/**]');
       expect(a[`${PAC}/on-comment`]).toBe('^/ci');
-      expect(a[`${PAC}/on-label`]).toBe('[ci, ready]');
       expect(a[`${PAC}/cancel-in-progress`]).toBe('true');
     });
 
-    it('cel replaces on-event/on-target-branch', () => {
-      const a = annotationsFor({ cel: 'event == "pull_request" && target_branch == "main"' });
-      expect(a[`${PAC}/on-cel-expression`]).toBe('event == "pull_request" && target_branch == "main"');
+    it('compound rules → single on-cel-expression, no on-event', () => {
+      const a = annotationsFor({
+        rules: [
+          { on: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST], branch: 'main' },
+          { on: TRIGGER_EVENTS.PULL_REQUEST, sourceBranch: 'feature/*', pathsChanged: ['src/**'] },
+        ],
+      });
+      expect(a[`${PAC}/on-cel-expression`]).toContain(' || ');
       expect(a[`${PAC}/on-event`]).toBeUndefined();
       expect(a[`${PAC}/on-target-branch`]).toBeUndefined();
     });
@@ -271,13 +259,13 @@ describe('TektonicProject', () => {
       capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'Repository');
 
     it('is not emitted when repository is omitted', () => {
-      const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
+      const pipeline = new GitPipeline({ name: 'push', trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks: [buildTask] });
       new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
       expect(findRepo()).toBeUndefined();
     });
 
     it('emits a minimal Repository (GitHub-App style: url only)', () => {
-      const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
+      const pipeline = new GitPipeline({ name: 'push', trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks: [buildTask] });
       new TektonicProject({
         name: 'app',
         namespace: 'ci',
@@ -292,7 +280,7 @@ describe('TektonicProject', () => {
     });
 
     it('emits a git_provider block with secret refs when configured', () => {
-      const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
+      const pipeline = new GitPipeline({ name: 'push', trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks: [buildTask] });
       new TektonicProject({
         namespace: 'ci',
         pipelines: [pipeline],
@@ -309,18 +297,24 @@ describe('TektonicProject', () => {
   });
 });
 
-describe('Pipeline.onTargetBranch', () => {
-  it('defaults to "*"', () => {
-    const p = new Pipeline({ name: 'p', tasks: [new Task({ name: 't', steps: [{ name: 's', image: 'alpine' }] })] });
-    expect(p.onTargetBranch).toBe('*');
+describe('Pipeline.events', () => {
+  const t = () => new Task({ name: 't', steps: [{ name: 's', image: 'alpine' }] });
+
+  it('is empty when no trigger is set', () => {
+    expect(new Pipeline({ name: 'p', tasks: [t()] }).events).toEqual([]);
   });
 
-  it('reflects the provided value', () => {
+  it('is the union of the trigger rules events', () => {
     const p = new Pipeline({
       name: 'p',
-      tasks: [new Task({ name: 't', steps: [{ name: 's', image: 'alpine' }] })],
-      onTargetBranch: 'main',
+      tasks: [t()],
+      trigger: {
+        rules: [
+          { on: TRIGGER_EVENTS.PUSH, branch: 'main' },
+          { on: TRIGGER_EVENTS.PULL_REQUEST, branch: 'main' },
+        ],
+      },
     });
-    expect(p.onTargetBranch).toBe('main');
+    expect(p.events).toEqual([TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST]);
   });
 });

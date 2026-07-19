@@ -59,7 +59,7 @@ const npmTest = new Task({
 // ── Plain Pipeline (not GitPipeline) — workspace wiring is explicit ───────────
 const pipeline = new Pipeline({
     name: "hub-clone-pipeline",
-    triggers: [TRIGGER_EVENTS.PUSH],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
     tasks: [npmTest],
 });
 

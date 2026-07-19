@@ -49,7 +49,7 @@ const test = new Task({
 // GitPipeline auto-creates a git-clone step that runs first
 const pipeline = new GitPipeline({
   name: 'push',
-  triggers: [TRIGGER_EVENTS.PUSH],
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
   tasks: [test],
 });
 
@@ -157,7 +157,7 @@ import { GitPipeline, TRIGGER_EVENTS } from '@pfenerty/tektonic';
 
 const pipeline = new GitPipeline({
   name: 'my-pipeline',
-  triggers: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST],
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }, { on: TRIGGER_EVENTS.PULL_REQUEST }] },
   tasks: [testTask, buildTask, scanTask],  // order doesn't matter; needs drives sequencing
   cloneImage: 'ghcr.io/myorg/git:latest', // optional: override default clone image
   cloneDepth: 'full',                      // optional: full history (default 1 = shallow);
@@ -178,10 +178,11 @@ const pipeline = new GitPipeline({
 | `TRIGGER_EVENTS.PULL_REQUEST` | PR opened/synchronized |
 | `TRIGGER_EVENTS.TAG` | Tag push |
 
-**Pipeline-level matching (`match`)** — control whether the *whole pipeline* fires with PAC's
-richer matchers: `match: { pathsChanged, pathsIgnored, onComment, onLabel, cancelInProgress, cel }`.
-This is distinct from the job-level `when`/`onChanges`/`fanOut` rules (which gate individual tasks
-*inside* a run). See [Matching in the PAC guide](pac.md#matching-match).
+**Firing rules (`trigger`)** — `trigger.rules` is a list of OR-ed rules; each names its event(s)
+(`on`) and its branch/path filters (`branch`, `sourceBranch`, `pathsChanged`, `pathsIgnored`).
+Plus `comment`, `labels`, `cancelInProgress`, and a raw `cel` escape hatch. This controls whether
+the *whole pipeline* fires — distinct from the job-level `when`/`onChanges`/`fanOut` rules (which
+gate individual tasks *inside* a run). See [Trigger & rules in the PAC guide](pac.md#trigger--rules).
 
 ## TektonicProject
 
@@ -229,8 +230,8 @@ new TektonicProject({
 
 **What gets generated** in `outdir`:
 - A `Task` YAML file per unique task under `tasks/`
-- A PAC-annotated `PipelineRun` template per triggered pipeline (the pipeline spec is inlined;
-  `triggers` → `on-event`, `onTargetBranch` → `on-target-branch`)
+- A PAC-annotated `PipelineRun` template per triggered pipeline (the pipeline spec is inlined; the
+  `trigger` rules → `on-event`/`on-target-branch` or a single `on-cel-expression`)
 - A `Repository` custom resource when `repository` is set
 - A `PersistentVolumeClaim` is *not* generated — bind cache PVCs via the `caches` option; PAC
   binds them into each PipelineRun
@@ -519,7 +520,7 @@ const deploy = new Task({
   steps: [{ name: 'deploy', image, script: sh`./deploy.sh ${service}` }],
 });
 
-new GitPipeline({ triggers: [TRIGGER_EVENTS.PUSH], tasks: [detect, deploy] });
+new GitPipeline({ trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] }, tasks: [detect, deploy] });
 ```
 
 This emits `matrix: { params: [{ name: service, value: $(tasks.detect-changes.results.changed-services[*]) }] }`
@@ -769,14 +770,14 @@ $grype_ec | into string | save -f /tekton/home/.exit-code
 // Push pipeline: test + scan
 const pushPipeline = new GitPipeline({
     name: 'npm-push',
-    triggers: [TRIGGER_EVENTS.PUSH],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
     tasks: [npmTest, anchoreScann],
 });
 
 // PR pipeline: test + build + scan (build only runs on PRs)
 const prPipeline = new GitPipeline({
     name: 'npm-pull-request',
-    triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST }] },
     tasks: [npmTest, npmBuild, anchoreScann],
 });
 

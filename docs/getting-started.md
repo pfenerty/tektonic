@@ -70,7 +70,7 @@ Pass `workspace` explicitly so your task steps can reference `workspace.path` wh
 const pushPipeline = new GitPipeline({
   name: 'npm-push',
   workspace,
-  triggers: [TRIGGER_EVENTS.PUSH],
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
   tasks: [npmTest],
   // Execution order: git-clone → test-npm
 });
@@ -78,7 +78,7 @@ const pushPipeline = new GitPipeline({
 const prPipeline = new GitPipeline({
   name: 'npm-pull-request',
   workspace,
-  triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+  trigger: { rules: [{ on: TRIGGER_EVENTS.PULL_REQUEST }] },
   tasks: [npmTest, npmBuild],
   // Execution order: git-clone → test-npm → build-npm
 });
@@ -170,8 +170,9 @@ Point the `repository` option at your repo and set up the PAC install once:
    kubectl apply -f .tekton/*-repository.k8s.yaml
    ```
 
-PAC matches events with the pipeline's `triggers` (→ `on-event`) and `onTargetBranch`
-(→ `on-target-branch`). See the [Pipelines as Code guide](pac.md) for details.
+PAC matches events using the pipeline's `trigger.rules` (compiled to `on-event`/`on-target-branch`,
+or a single `on-cel-expression` for compound rules). See the
+[Pipelines as Code guide](pac.md#trigger--rules) for details.
 
 ## Full example
 

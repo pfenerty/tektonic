@@ -2,7 +2,7 @@ import { App, ApiObject, Chart } from 'cdk8s';
 import { Pipeline } from './pipeline';
 import { TaskLike, TaskDef } from './task';
 import { Workspace } from './workspace';
-import { TRIGGER_EVENTS } from './trigger-events';
+import { triggerAnnotations } from './pac-trigger';
 import { TEKTON_API_V1, PAC_API, DEFAULT_POD_SECURITY_CONTEXT } from '../constants';
 import type { CacheBackend } from './cache-backend';
 import type { LanguageName } from '../script';
@@ -59,13 +59,6 @@ export interface RepositoryConfig {
   /** Optional git-provider block. Omit for GitHub-App installs. */
   gitProvider?: RepositoryGitProvider;
 }
-
-// Maps TRIGGER_EVENTS values to PAC on-event annotation strings
-const PAC_EVENT: Partial<Record<TRIGGER_EVENTS, string>> = {
-  [TRIGGER_EVENTS.PUSH]: 'push',
-  [TRIGGER_EVENTS.PULL_REQUEST]: 'pull_request',
-  [TRIGGER_EVENTS.TAG]: 'push',
-};
 
 // Well-known pipeline params bound to PAC template variables
 const PAC_PARAM_BINDINGS: Record<string, string> = {
@@ -239,33 +232,10 @@ export class TektonicProject {
     // 4. Synthesize a PAC PipelineRun template per triggered pipeline
     const runApp = new App({ outdir });
     for (const pipeline of opts.pipelines) {
-      if (pipeline.triggers.length === 0) continue;
+      if (!pipeline.trigger || pipeline.events.length === 0) continue;
 
-      // Determine PAC on-event and on-target-branch
-      const events = [...new Set(pipeline.triggers.map(t => PAC_EVENT[t]).filter(Boolean))] as string[];
-      if (events.length === 0) continue;
-
-      const isTagPipeline = pipeline.triggers.includes(TRIGGER_EVENTS.TAG);
-      const onEvent = `[${events.join(', ')}]`;
-      const onTargetBranch = isTagPipeline
-        ? '[refs/tags/*]'
-        : `[${pipeline.onTargetBranch}]`;
-
-      // PAC pipeline-level matching annotations. `on-cel-expression` replaces
-      // `on-event`/`on-target-branch`; the rest combine.
-      const PAC = 'pipelinesascode.tekton.dev';
-      const pacList = (xs: string[]) => `[${xs.join(', ')}]`;
-      const m = pipeline.match;
-      const matchAnnotations: Record<string, string> = {
-        ...(m?.cel
-          ? { [`${PAC}/on-cel-expression`]: m.cel }
-          : { [`${PAC}/on-event`]: onEvent, [`${PAC}/on-target-branch`]: onTargetBranch }),
-        ...(m?.pathsChanged?.length ? { [`${PAC}/on-path-changed`]: pacList(m.pathsChanged) } : {}),
-        ...(m?.pathsIgnored?.length ? { [`${PAC}/on-path-change-ignore`]: pacList(m.pathsIgnored) } : {}),
-        ...(m?.onComment ? { [`${PAC}/on-comment`]: m.onComment } : {}),
-        ...(m?.onLabel?.length ? { [`${PAC}/on-label`]: pacList(m.onLabel) } : {}),
-        ...(m?.cancelInProgress ? { [`${PAC}/cancel-in-progress`]: 'true' } : {}),
-      };
+      // PAC firing annotations (on-event/on-target-branch, or on-cel-expression + comment/label/cancel).
+      const matchAnnotations = triggerAnnotations(pipeline.trigger);
 
       // Build the inlined pipeline spec (with auto-injected project-name / repo-full-name params)
       const pipelineSpec = pipeline._buildSpec(EXTRA_PIPELINE_PARAMS, prefix || undefined);
