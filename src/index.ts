@@ -37,7 +37,7 @@ export type { Expressable, WhenClause, CelWhenExpression } from "./lib/core/cond
 export { onChanges } from "./lib/core/changes";
 export type { OnChangesOptions } from "./lib/core/changes";
 export { Pipeline } from "./lib/core/pipeline";
-export type { PipelineOptions } from "./lib/core/pipeline";
+export type { PipelineOptions, PacMatch } from "./lib/core/pipeline";
 export { GitPipeline } from "./lib/core/git-pipeline";
 export type { GitPipelineOptions } from "./lib/core/git-pipeline";
 export { TektonicProject } from "./lib/core/tektonic-project";

@@ -221,6 +221,51 @@ describe('TektonicProject', () => {
     expect(pipelineRun.spec.timeouts).toBeUndefined();
   });
 
+  describe('PAC matching (match)', () => {
+    const PAC = 'pipelinesascode.tekton.dev';
+    const annotationsFor = (match?: any) => {
+      const pipeline = new GitPipeline({
+        name: 'ci',
+        triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+        onTargetBranch: 'main',
+        match,
+        tasks: [buildTask],
+      });
+      new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
+      const pr = capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'PipelineRun');
+      return pr.metadata.annotations as Record<string, string>;
+    };
+
+    it('emits on-event/on-target-branch when no match is set', () => {
+      const a = annotationsFor(undefined);
+      expect(a[`${PAC}/on-event`]).toBe('[pull_request]');
+      expect(a[`${PAC}/on-target-branch`]).toBe('[main]');
+    });
+
+    it('emits path/comment/label/cancel annotations and keeps on-event', () => {
+      const a = annotationsFor({
+        pathsChanged: ['src/**', 'package.json'],
+        pathsIgnored: ['docs/**'],
+        onComment: '^/ci',
+        onLabel: ['ci', 'ready'],
+        cancelInProgress: true,
+      });
+      expect(a[`${PAC}/on-event`]).toBe('[pull_request]');
+      expect(a[`${PAC}/on-path-changed`]).toBe('[src/**, package.json]');
+      expect(a[`${PAC}/on-path-change-ignore`]).toBe('[docs/**]');
+      expect(a[`${PAC}/on-comment`]).toBe('^/ci');
+      expect(a[`${PAC}/on-label`]).toBe('[ci, ready]');
+      expect(a[`${PAC}/cancel-in-progress`]).toBe('true');
+    });
+
+    it('cel replaces on-event/on-target-branch', () => {
+      const a = annotationsFor({ cel: 'event == "pull_request" && target_branch == "main"' });
+      expect(a[`${PAC}/on-cel-expression`]).toBe('event == "pull_request" && target_branch == "main"');
+      expect(a[`${PAC}/on-event`]).toBeUndefined();
+      expect(a[`${PAC}/on-target-branch`]).toBeUndefined();
+    });
+  });
+
   describe('Repository CR', () => {
     const findRepo = () =>
       capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'Repository');

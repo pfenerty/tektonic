@@ -6,6 +6,31 @@ import { Workspace } from './workspace';
 import { Task, TaskLike, TaskDef } from './task';
 import { TRIGGER_EVENTS } from './trigger-events';
 
+/**
+ * PAC pipeline-level matching config (emitted as `pipelinesascode.tekton.dev/*` annotations).
+ *
+ * Decides whether the whole `PipelineRun` fires for an event — orthogonal to the job-level
+ * rules (`when`/`onChanges`/`fanOut`) that gate individual tasks *inside* a run.
+ */
+export interface PacMatch {
+  /**
+   * Raw PAC CEL expression (`on-cel-expression`). When set it **replaces** event/branch matching,
+   * so include the event/branch checks yourself, e.g.
+   * `event == "pull_request" && target_branch == "main"`.
+   */
+  cel?: string;
+  /** Path globs — start the pipeline only if matching files changed (`on-path-changed`). */
+  pathsChanged?: string[];
+  /** Path globs to ignore (`on-path-change-ignore`). */
+  pathsIgnored?: string[];
+  /** Regex — start the pipeline on a matching PR comment, e.g. `'^/integration'` (`on-comment`). */
+  onComment?: string;
+  /** Start the pipeline when the PR carries any of these labels (`on-label`). */
+  onLabel?: string[];
+  /** Cancel an in-progress run of this pipeline when a newer event arrives (`cancel-in-progress`). */
+  cancelInProgress?: boolean;
+}
+
 /** Options for constructing a {@link Pipeline}. */
 export interface PipelineOptions {
   /**
@@ -28,6 +53,11 @@ export interface PipelineOptions {
    * Ignored for `TRIGGER_EVENTS.TAG` pipelines, which always target `"refs/tags/*"`.
    */
   onTargetBranch?: string;
+  /**
+   * PAC pipeline-level matching (path/comment/label/CEL filters + cancel-in-progress).
+   * See {@link PacMatch}.
+   */
+  match?: PacMatch;
   /**
    * Overall PipelineRun timeout as a Go duration string (e.g. `"2h"`, `"90m"`).
    * Emitted by {@link TektonicProject} as `spec.timeouts.pipeline`. When unset, Tekton's
@@ -58,6 +88,8 @@ export class Pipeline {
    * Defaults to `"*"`. Ignored for TAG pipelines, which always use `"refs/tags/*"`.
    */
   readonly onTargetBranch: string;
+  /** PAC pipeline-level matching config, emitted as `pipelinesascode.tekton.dev/*` annotations. */
+  readonly match?: PacMatch;
   /** Overall PipelineRun timeout (Go duration), emitted by TektonicProject. Unset = Tekton default. */
   readonly timeout?: string;
   private readonly extraParams: Param[];
@@ -78,6 +110,7 @@ export class Pipeline {
     this.tasks = opts.tasks;
     this.finallyTasks = opts.finallyTasks ?? [];
     this.onTargetBranch = opts.onTargetBranch ?? '*';
+    this.match = opts.match;
     this.timeout = opts.timeout;
     this.extraParams = opts.params ?? [];
 

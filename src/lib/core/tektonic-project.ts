@@ -251,6 +251,22 @@ export class TektonicProject {
         ? '[refs/tags/*]'
         : `[${pipeline.onTargetBranch}]`;
 
+      // PAC pipeline-level matching annotations. `on-cel-expression` replaces
+      // `on-event`/`on-target-branch`; the rest combine.
+      const PAC = 'pipelinesascode.tekton.dev';
+      const pacList = (xs: string[]) => `[${xs.join(', ')}]`;
+      const m = pipeline.match;
+      const matchAnnotations: Record<string, string> = {
+        ...(m?.cel
+          ? { [`${PAC}/on-cel-expression`]: m.cel }
+          : { [`${PAC}/on-event`]: onEvent, [`${PAC}/on-target-branch`]: onTargetBranch }),
+        ...(m?.pathsChanged?.length ? { [`${PAC}/on-path-changed`]: pacList(m.pathsChanged) } : {}),
+        ...(m?.pathsIgnored?.length ? { [`${PAC}/on-path-change-ignore`]: pacList(m.pathsIgnored) } : {}),
+        ...(m?.onComment ? { [`${PAC}/on-comment`]: m.onComment } : {}),
+        ...(m?.onLabel?.length ? { [`${PAC}/on-label`]: pacList(m.onLabel) } : {}),
+        ...(m?.cancelInProgress ? { [`${PAC}/cancel-in-progress`]: 'true' } : {}),
+      };
+
       // Build the inlined pipeline spec (with auto-injected project-name / repo-full-name params)
       const pipelineSpec = pipeline._buildSpec(EXTRA_PIPELINE_PARAMS, prefix || undefined);
 
@@ -293,8 +309,7 @@ export class TektonicProject {
         metadata: {
           name: pipelineRunName,
           annotations: {
-            'pipelinesascode.tekton.dev/on-event': onEvent,
-            'pipelinesascode.tekton.dev/on-target-branch': onTargetBranch,
+            ...matchAnnotations,
             ...(taskAnnotation ? { 'pipelinesascode.tekton.dev/task': taskAnnotation } : {}),
             'pipelinesascode.tekton.dev/max-keep-runs': String(maxKeepRuns),
             ...(opts.pipelineRunAnnotations ?? {}),

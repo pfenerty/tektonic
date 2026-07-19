@@ -55,6 +55,41 @@ const pushPipeline = new GitPipeline({
 
 TAG pipelines always target `refs/tags/*` regardless of `onTargetBranch`.
 
+## Matching (`match`)
+
+For richer *pipeline-level* matching, set `match` on a pipeline. It maps to PAC's
+`pipelinesascode.tekton.dev/*` annotations and decides whether the **whole PipelineRun** fires
+for an event. (This is distinct from the job-level `when`/`onChanges`/`fanOut` rules that gate
+individual tasks *inside* a run — see the [agent guide](agent-guide.md#rules--conditions).)
+
+```typescript
+const ci = new GitPipeline({
+  name: 'ci',
+  triggers: [TRIGGER_EVENTS.PULL_REQUEST],
+  onTargetBranch: 'main',
+  match: {
+    pathsChanged: ['src/**', 'package.json'], // start only when these change
+    onComment: '^/ci',                         // ...or on a `/ci` PR comment
+    cancelInProgress: true,                    // supersede older runs of this PR
+  },
+  tasks: [test, build],
+});
+```
+
+| `match` field | PAC annotation | Notes |
+|---------------|----------------|-------|
+| `cel` | `on-cel-expression` | Raw CEL escape hatch. **Replaces** `on-event`/`on-target-branch` — put the event/branch checks in the CEL yourself. |
+| `pathsChanged` | `on-path-changed` | Glob list; PAC computes the diff. |
+| `pathsIgnored` | `on-path-change-ignore` | Glob list. |
+| `onComment` | `on-comment` | Regex; pair with a `pull_request` trigger. |
+| `onLabel` | `on-label` | Label list; pair with a `pull_request` trigger. |
+| `cancelInProgress` | `cancel-in-progress` | Cancel a running instance when a newer event arrives. |
+
+All fields except `cel` combine with `on-event`/`on-target-branch`. PAC's CEL namespace
+(`event`, `source_branch`, `target_branch`, `files.all`, …) differs from Tekton `when`-CEL, so
+`cel` takes a raw PAC expression, e.g.
+`event == "pull_request" && files.all.exists(f, f.matches("src/.*"))`.
+
 ## Param bindings
 
 PAC injects template variables at trigger time. `TektonicProject` binds well-known pipeline params to

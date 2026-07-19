@@ -78,6 +78,9 @@ new TektonicProject({
         new GitPipeline({
             name: "ci",
             triggers: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST],
+            // PAC pipeline-level matching: supersede older PR runs, and allow /ci re-runs.
+            // (Job-level `when`/`onChanges`/`fanOut` on the tasks are orthogonal to this.)
+            match: { cancelInProgress: true, onComment: "^/ci" },
             tasks: [lint, test, integration, detect, deploy], // clean list — rules/fan-out are on the jobs
         }),
     ],

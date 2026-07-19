@@ -178,6 +178,11 @@ const pipeline = new GitPipeline({
 | `TRIGGER_EVENTS.PULL_REQUEST` | PR opened/synchronized |
 | `TRIGGER_EVENTS.TAG` | Tag push |
 
+**Pipeline-level matching (`match`)** — control whether the *whole pipeline* fires with PAC's
+richer matchers: `match: { pathsChanged, pathsIgnored, onComment, onLabel, cancelInProgress, cel }`.
+This is distinct from the job-level `when`/`onChanges`/`fanOut` rules (which gate individual tasks
+*inside* a run). See [Matching in the PAC guide](pac.md#matching-match).
+
 ## TektonicProject
 
 The synthesizer. It emits in-repo [Pipelines as Code](https://pipelinesascode.tekton.dev/)
