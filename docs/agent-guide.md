@@ -13,8 +13,13 @@ A complete reference for agents creating Tekton CI/CD pipelines with this librar
 ## Installation
 
 ```bash
-npm install @pfenerty/tektonic cdk8s constructs
+npm install @pfenerty/tektonic
 ```
+
+`tektonic` bundles and version-manages `cdk8s` and `constructs` for you — you do
+not need to install or declare them separately. The few cdk8s/constructs types
+you might need for advanced usage (`App`, `Chart`, `ChartProps`, `Construct`,
+`ApiObject`) are re-exported from `@pfenerty/tektonic`.
 
 Create a pipeline file (e.g. `ci/pipeline.ts`) and run it:
 
