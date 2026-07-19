@@ -88,7 +88,7 @@ spec:
     - env:
         - name: GRYPE_DB_CACHE_DIR
           value: $(workspaces.workspace.path)/grype-db
-      image: ghcr.io/pfenerty/apko-cicd/grype:0.110.0
+      image: ghcr.io/pfenerty/apko-cicd/grype:0.114.0
       name: scan
       onError: continue
       script: |-
