@@ -17,7 +17,7 @@ import {
     Task,
     HubTaskRef,
     Pipeline,
-    TektonProject,
+    TektonicProject,
     TRIGGER_EVENTS,
 } from "../src";
 
@@ -64,7 +64,7 @@ const pipeline = new Pipeline({
 });
 
 // ── Synthesize ────────────────────────────────────────────────────────────────
-new TektonProject({
+new TektonicProject({
     name: "hub-example",
     namespace: "tekton-pipelines",
     pipelines: [pipeline],

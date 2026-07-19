@@ -135,7 +135,7 @@ All four inject a timestamped `log` helper in their preamble.
 
 A raw string **without** a shebang is rendered with a default language when one is set —
 `Task.defaultLanguage`, falling back to the project-level `defaultLanguage`
-(`TektonProject`/`PACProject`). A tagged body always carries its own language and ignores the
+(`TektonicProject`). A tagged body always carries its own language and ignores the
 default; a raw string **with** a shebang is always passed through untouched.
 
 ```typescript

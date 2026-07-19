@@ -1,10 +1,64 @@
 import { App, ApiObject, Chart } from 'cdk8s';
 import { Pipeline } from './pipeline';
 import { TaskLike, TaskDef } from './task';
+import { Workspace } from './workspace';
 import { TRIGGER_EVENTS } from './trigger-events';
-import { TEKTON_API_V1, DEFAULT_POD_SECURITY_CONTEXT } from '../constants';
-import type { CacheSpec } from './tekton-project';
+import { TEKTON_API_V1, PAC_API, DEFAULT_POD_SECURITY_CONTEXT } from '../constants';
+import type { CacheBackend } from './cache-backend';
 import type { LanguageName } from '../script';
+
+/**
+ * Specifies a persistent cache volume bound into every PipelineRun. The generated
+ * PVC persists across runs so tools can reuse cached data (a vulnerability database,
+ * dependencies, build artifacts).
+ */
+export interface CacheSpec {
+  /** The workspace bound to the persistent volume across PipelineRuns. */
+  workspace: Workspace;
+  /** PVC storage size. Defaults to `'1Gi'`. */
+  storageSize?: string;
+  /**
+   * Name of the PersistentVolumeClaim to bind. Defaults to
+   * `${projectName}-${workspace.name}` when the project has a name, else `${workspace.name}`.
+   */
+  claimName?: string;
+  /** StorageClass for the PVC. Omitted when unset — cluster default applies. */
+  storageClassName?: string;
+  /** Access modes for the cache PVC. Defaults to `['ReadWriteOnce']`. */
+  accessModes?: string[];
+  /**
+   * Cache storage backend. When set to `gcs({ ... })`, no PVC is bound for
+   * this cache — archives are stored in GCS instead.
+   */
+  backend?: CacheBackend;
+}
+
+/**
+ * Git provider configuration for a generated PAC {@link RepositoryConfig}. Omit
+ * entirely when PAC is installed as a GitHub App (URL matching is sufficient).
+ */
+export interface RepositoryGitProvider {
+  /** Provider type, e.g. `'github'`, `'gitlab'`, `'bitbucket-cloud'`, `'gitea'`. */
+  type?: 'github' | 'gitlab' | 'bitbucket-cloud' | 'gitea';
+  /** Name of the Secret holding the provider API token. */
+  secretName?: string;
+  /** Key within the token Secret. Defaults to `'token'`. */
+  secretKey?: string;
+  /** Name of the Secret holding the webhook secret (for webhook-based installs). */
+  webhookSecretName?: string;
+  /** Key within the webhook Secret. Defaults to `'webhook.secret'`. */
+  webhookSecretKey?: string;
+  /** API base URL for self-hosted providers (e.g. GitHub Enterprise, self-hosted GitLab). */
+  apiUrl?: string;
+}
+
+/** Options for generating a PAC `Repository` custom resource. */
+export interface RepositoryConfig {
+  /** Repository URL PAC matches incoming events against (`spec.url`). */
+  url: string;
+  /** Optional git-provider block. Omit for GitHub-App installs. */
+  gitProvider?: RepositoryGitProvider;
+}
 
 // Maps TRIGGER_EVENTS values to PAC on-event annotation strings
 const PAC_EVENT: Partial<Record<TRIGGER_EVENTS, string>> = {
@@ -20,7 +74,6 @@ const PAC_PARAM_BINDINGS: Record<string, string> = {
   'project-name': '{{ repo_name }}',
   'repo-full-name': '{{ repo_owner }}/{{ repo_name }}',
   'source-branch': '{{ source_branch }}',
-  'diff-base': '{{ target_branch }}',
 };
 
 const EXTRA_PIPELINE_PARAMS = [
@@ -29,8 +82,13 @@ const EXTRA_PIPELINE_PARAMS = [
   { name: 'source-branch', type: 'string' },
 ];
 
-/** Options for {@link PACProject}. */
-export interface PACProjectOptions {
+/** Options for {@link TektonicProject}. */
+export interface TektonicProjectOptions {
+  /**
+   * Generate a PAC `Repository` custom resource linking this repo to the namespace
+   * (and, optionally, a git provider). Omit to manage the `Repository` yourself.
+   */
+  repository?: RepositoryConfig;
   /** Optional name prefix applied to all generated resource names. */
   name?: string;
   /** Kubernetes namespace for task and PipelineRun resources. */
@@ -106,24 +164,26 @@ export interface PACProjectOptions {
 }
 
 /**
- * Synthesizes a Tekton Pipelines as Code (PAC) project to YAML.
+ * Synthesizes a Tektonic project to Tekton [Pipelines as Code](https://pipelinesascode.tekton.dev/)
+ * (PAC) YAML — the single Tektonic synthesizer.
  *
- * Unlike {@link TektonProject}, which generates cluster-deployed Pipeline and
- * trigger infrastructure resources, `PACProject` generates:
+ * It generates:
  * - PAC-annotated `PipelineRun` templates in `<outdir>/` (one per triggered pipeline)
  * - `Task` YAML files in `<outdir>/tasks/` (one per unique task)
+ * - an optional `Repository` custom resource (when {@link RepositoryConfig | repository} is set)
  *
  * PAC reads these files directly from the pushed commit's SHA at runtime, so the
  * pipeline definition is always exactly what was committed — no Flux sync race.
  *
  * @example
  * ```ts
- * new PACProject({
+ * new TektonicProject({
  *   name: 'ocidex',
  *   namespace: 'ocidex-ci',
  *   pipelines: [pushPipeline, prPipeline],
  *   outdir: '../.tekton',
  *   repoRelativePath: '.tekton',
+ *   repository: { url: 'https://github.com/pfenerty/ocidex' },
  *   caches: [
  *     { workspace: goCacheWs, storageSize: '5Gi', storageClassName: 'local-path' },
  *   ],
@@ -131,8 +191,8 @@ export interface PACProjectOptions {
  * });
  * ```
  */
-export class PACProject {
-  constructor(opts: PACProjectOptions) {
+export class TektonicProject {
+  constructor(opts: TektonicProjectOptions) {
     const outdir = opts.outdir ?? '.tekton';
     const repoRelativePath = opts.repoRelativePath ?? outdir;
     const prefix = opts.name ?? '';
@@ -257,6 +317,40 @@ export class PACProject {
         },
       });
     }
+
+    // Optional PAC Repository CR linking this repo to the namespace (+ provider).
+    if (opts.repository) {
+      const repoName = prefix || opts.repository.url.replace(/^.*\//, '') || 'repository';
+      const gp = opts.repository.gitProvider;
+      const gitProvider = gp
+        ? {
+            ...(gp.type ? { type: gp.type } : {}),
+            ...(gp.apiUrl ? { url: gp.apiUrl } : {}),
+            ...(gp.secretName
+              ? { secret: { name: gp.secretName, key: gp.secretKey ?? 'token' } }
+              : {}),
+            ...(gp.webhookSecretName
+              ? {
+                  webhook_secret: {
+                    name: gp.webhookSecretName,
+                    key: gp.webhookSecretKey ?? 'webhook.secret',
+                  },
+                }
+              : {}),
+          }
+        : undefined;
+      const repoChart = new Chart(runApp, `${repoName}-repository`);
+      new ApiObject(repoChart, 'repository', {
+        apiVersion: PAC_API,
+        kind: 'Repository',
+        metadata: { name: repoName, namespace },
+        spec: {
+          url: opts.repository.url,
+          ...(gitProvider ? { git_provider: gitProvider } : {}),
+        },
+      });
+    }
+
     runApp.synth();
   }
 }

@@ -1,22 +1,20 @@
 # Pipelines as Code (PAC)
 
-Tektonic has two synthesizers. [`TektonProject`](agent-guide.md#tektonproject) generates
-cluster-deployed `Pipeline` resources plus the full webhook trigger stack (EventListener,
-TriggerBindings/Templates, RBAC). **`PACProject`** instead generates
+[`TektonicProject`](agent-guide.md#tektonicproject) is Tektonic's synthesizer. It generates
 [Pipelines as Code](https://pipelinesascode.tekton.dev/) artifacts that live in your repo and
-are read directly from the pushed commit at runtime — no EventListener, no Flux sync race, and
-the pipeline that runs is always exactly what was committed.
+are read directly from the pushed commit at runtime — no EventListener, no RBAC, no Flux sync
+race, and the pipeline that runs is always exactly what was committed. PAC also handles webhook
+delivery, event matching, status reporting, and multi-provider support (GitHub, GitLab,
+Bitbucket, Gitea) for you.
 
-Use `PACProject` when PAC is already installed in your cluster and you want pipelines defined
-in-repo under `.tekton/`. Use `TektonProject` when you want Tektonic to own the trigger
-infrastructure itself.
+**Requires** the PAC operator installed in the cluster.
 
 ## What it generates
 
 ```typescript
-import { GitPipeline, PACProject, TRIGGER_EVENTS } from '@pfenerty/tektonic';
+import { GitPipeline, TektonicProject, TRIGGER_EVENTS } from '@pfenerty/tektonic';
 
-new PACProject({
+new TektonicProject({
   name: 'ocidex',
   namespace: 'ocidex-ci',
   pipelines: [pushPipeline, prPipeline, tagPipeline],
@@ -59,7 +57,7 @@ TAG pipelines always target `refs/tags/*` regardless of `onTargetBranch`.
 
 ## Param bindings
 
-PAC injects template variables at trigger time. `PACProject` binds well-known pipeline params to
+PAC injects template variables at trigger time. `TektonicProject` binds well-known pipeline params to
 those variables automatically, so a task that declares e.g. a `url` param receives the repo URL
 with no extra wiring:
 
@@ -73,7 +71,7 @@ with no extra wiring:
 
 `project-name`, `repo-full-name`, and `source-branch` are added as pipeline params
 automatically. `url` and `revision` are the params `GitPipeline` already creates for its
-git-clone task — so a `GitPipeline` + `PACProject` combination is wired end-to-end with no
+git-clone task — so a `GitPipeline` + `TektonicProject` combination is wired end-to-end with no
 manual params. Any param without a known binding is emitted with an empty value for you to fill
 in.
 
@@ -89,7 +87,7 @@ Each `PipelineRun` gets workspace bindings derived from the inlined spec:
 GCS-backed caches need no PVC and are filtered out of the workspace bindings.
 
 ```typescript
-new PACProject({
+new TektonicProject({
   name: 'ocidex',
   namespace: 'ocidex-ci',
   pipelines: [pushPipeline, prPipeline, tagPipeline],

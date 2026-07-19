@@ -4,7 +4,9 @@
 
 **Define Tekton CI/CD pipelines as strongly-typed TypeScript — declarative in spirit, without
 the pain of YAML.** Tektonic is a [cdk8s](https://cdk8s.io/)-based library for composing params,
-workspaces, tasks, and pipelines as real code, then synthesizing standard Tekton YAML.
+workspaces, tasks, and pipelines as real code, then synthesizing in-repo
+[Pipelines as Code](https://pipelinesascode.tekton.dev/) (PAC) artifacts that the PAC operator
+runs directly from your repository.
 
 YAML-based CI/CD is fine until you need anything dynamic: a matrix, a shared task across
 pipelines, a conditional stage, a script longer than a few lines. Then it turns into copy-paste,
@@ -21,13 +23,17 @@ files underneath.
 - **Scripts as first-class, testable files** — write step bodies in real `.sh`/`.bash`/`.nu`/
   `.py` files with IDE highlighting and linting, and unit-test them by running the real
   interpreter. See [docs/scripting.md](docs/scripting.md).
-- **No vendor lock-in** — caching, VCS triggers, status reporting, and script languages are
-  pluggable strategy interfaces. Built-ins for PVC/GCS caching and GitHub ship in the box; swap
-  in your own without forking.
+- **Pluggable strategies** — caching, status reporting, and script languages are strategy
+  interfaces. Built-ins for PVC/GCS caching and GitHub ship in the box; swap in your own without
+  forking.
+- **GitOps-native via PAC** — output is in-repo `.tekton/` PipelineRun templates read from the
+  pushed commit, so the pipeline that runs is always exactly what was committed. Multi-provider
+  (GitHub, GitLab, Bitbucket, Gitea) is handled by the PAC operator — no per-provider trigger
+  wiring to maintain.
 - **A base, not a straitjacket** — Tektonic provides primitives and opt-in helpers
-  (`GitPipeline`, caching, Pipelines-as-Code). It never dictates how *you* build your app.
-- **Portable output** — it emits plain Tekton resources. No runtime dependency on Tektonic in
-  your cluster.
+  (`GitPipeline`, caching). It never dictates how *you* build your app.
+- **Portable output** — it emits plain Tekton + PAC resources. No runtime dependency on Tektonic
+  in your cluster.
 
 ## Install
 
@@ -39,7 +45,7 @@ npm install @pfenerty/tektonic cdk8s constructs
 
 ```typescript
 import {
-  Workspace, Task, GitPipeline, TektonProject, TRIGGER_EVENTS, nu,
+  Workspace, Task, GitPipeline, TektonicProject, TRIGGER_EVENTS, nu,
 } from '@pfenerty/tektonic';
 
 const workspace = new Workspace({ name: 'workspace' });
@@ -60,13 +66,14 @@ const pushPipeline = new GitPipeline({
   // git-clone is auto-created; test runs after it automatically
 });
 
-new TektonProject({
+new TektonicProject({
   name: 'my-app',
   namespace: 'tekton-builds',
   pipelines: [pushPipeline],
-  webhookSecretRef: { secretName: 'github-webhook-secret', secretKey: 'secret' },
+  outdir: '.tekton',
+  repository: { url: 'https://github.com/my-org/my-app' },
 });
-// → writes YAML for Tasks, Pipeline, RBAC, EventListener, TriggerBindings/Templates
+// → writes in-repo PAC PipelineRun templates + Task files (+ a Repository CR) under .tekton/
 ```
 
 Prefer to keep larger scripts in their own files? Load them with `scriptFromFile` — the language
@@ -87,8 +94,7 @@ steps: [{ name: 'fmt', image: goImage, script: scriptFromFile(path.join(__dirnam
 - [Caching](docs/caching.md) — PVC & GCS caches, compression, save strategies
 - [Secrets & security](docs/secrets.md) — env/file secret injection and security defaults
 - [Tekton Chains](docs/chains.md) — automatic SLSA provenance: git source, image subjects, signing annotations
-- [Pipelines as Code](docs/pac.md) — `PACProject` and in-repo `.tekton/` pipelines
-- [Triggers](docs/triggers.md) — GitHub webhook trigger infrastructure
+- [Pipelines as Code](docs/pac.md) — `TektonicProject` and in-repo `.tekton/` pipelines
 - [Custom cache backends](docs/cache-backends.md) — implement the `CacheBackend` interface
 - [Architecture & internals](docs/architecture.md) — how Tektonic is built (for contributors)
 
@@ -100,7 +106,7 @@ steps: [{ name: 'fmt', image: goImage, script: scriptFromFile(path.join(__dirnam
 | cdk8s | >= 2.0 |
 | constructs | >= 10.0 |
 | Tekton Pipelines | >= v0.59 |
-| Tekton Triggers | >= v0.26 |
+| Pipelines as Code (PAC) | installed in-cluster |
 
 ## Development
 

@@ -3,7 +3,7 @@ import { GitPipeline } from './git-pipeline';
 import { Pipeline } from './pipeline';
 import { Task } from './task';
 import { Workspace } from './workspace';
-import { PACProject } from './pac-project';
+import { TektonicProject } from './tektonic-project';
 import { TRIGGER_EVENTS } from './trigger-events';
 
 const capturedCharts: any[] = [];
@@ -24,7 +24,7 @@ vi.mock('cdk8s', async () => {
   };
 });
 
-describe('PACProject', () => {
+describe('TektonicProject', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     capturedCharts.length = 0;
@@ -48,7 +48,7 @@ describe('PACProject', () => {
       tasks: [buildTask, testTask],
     });
     expect(() =>
-      new PACProject({ namespace: 'ci', pipelines: [pipeline] }),
+      new TektonicProject({ namespace: 'ci', pipelines: [pipeline] }),
     ).not.toThrow();
   });
 
@@ -64,7 +64,7 @@ describe('PACProject', () => {
       tasks: [buildTask, testTask],
     });
     expect(() =>
-      new PACProject({ namespace: 'ci', pipelines: [push, pr] }),
+      new TektonicProject({ namespace: 'ci', pipelines: [push, pr] }),
     ).not.toThrow();
   });
 
@@ -75,7 +75,7 @@ describe('PACProject', () => {
       tasks: [buildTask],
     });
     expect(() =>
-      new PACProject({ name: 'ocidex', namespace: 'ocidex-ci', pipelines: [pipeline] }),
+      new TektonicProject({ name: 'ocidex', namespace: 'ocidex-ci', pipelines: [pipeline] }),
     ).not.toThrow();
   });
 
@@ -87,7 +87,7 @@ describe('PACProject', () => {
       tasks: [buildTask],
     });
     expect(() =>
-      new PACProject({
+      new TektonicProject({
         name: 'ocidex',
         namespace: 'ocidex-ci',
         pipelines: [pipeline],
@@ -99,7 +99,7 @@ describe('PACProject', () => {
   it('skips pipelines with no triggers', () => {
     const noTrigger = new Pipeline({ name: 'manual', tasks: [buildTask] });
     expect(() =>
-      new PACProject({ namespace: 'ci', pipelines: [noTrigger] }),
+      new TektonicProject({ namespace: 'ci', pipelines: [noTrigger] }),
     ).not.toThrow();
   });
 
@@ -110,7 +110,7 @@ describe('PACProject', () => {
       tasks: [buildTask],
     });
     expect(() =>
-      new PACProject({ namespace: 'ci', pipelines: [tag] }),
+      new TektonicProject({ namespace: 'ci', pipelines: [tag] }),
     ).not.toThrow();
   });
 
@@ -122,7 +122,7 @@ describe('PACProject', () => {
       tasks: [buildTask],
     });
     expect(() =>
-      new PACProject({ namespace: 'ci', pipelines: [pipeline] }),
+      new TektonicProject({ namespace: 'ci', pipelines: [pipeline] }),
     ).not.toThrow();
   });
 
@@ -133,7 +133,7 @@ describe('PACProject', () => {
       tasks: [buildTask],
     });
     expect(() =>
-      new PACProject({
+      new TektonicProject({
         namespace: 'ci',
         pipelines: [pipeline],
         defaultPodSecurityContext: { runAsUser: 1024, runAsGroup: 1024, fsGroup: 1024 },
@@ -148,7 +148,7 @@ describe('PACProject', () => {
       tasks: [buildTask],
     });
     expect(() =>
-      new PACProject({
+      new TektonicProject({
         namespace: 'ci',
         pipelines: [pipeline],
         outdir: '../../.tekton',
@@ -165,7 +165,7 @@ describe('PACProject', () => {
       tasks: [buildTask],
     });
     expect(() =>
-      new PACProject({ namespace: 'ci', pipelines: [pipeline] }),
+      new TektonicProject({ namespace: 'ci', pipelines: [pipeline] }),
     ).not.toThrow();
   });
 
@@ -175,7 +175,7 @@ describe('PACProject', () => {
       triggers: [TRIGGER_EVENTS.PUSH],
       tasks: [buildTask],
     });
-    new PACProject({ namespace: 'ci', pipelines: [pipeline] });
+    new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
 
     const allObjects = capturedCharts.flatMap((c: any) => c.toJson());
     const pipelineRun = allObjects.find((o: any) => o.kind === 'PipelineRun');
@@ -189,7 +189,7 @@ describe('PACProject', () => {
       triggers: [TRIGGER_EVENTS.PUSH],
       tasks: [buildTask],
     });
-    new PACProject({
+    new TektonicProject({
       namespace: 'ci',
       pipelines: [pipeline],
       pipelineRunAnnotations: { 'chains.tekton.dev/transparency-upload': 'true' },
@@ -209,16 +209,58 @@ describe('PACProject', () => {
       timeout: '2h',
       tasks: [buildTask],
     });
-    new PACProject({ namespace: 'ci', pipelines: [pipeline] });
+    new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
     const pipelineRun = capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'PipelineRun');
     expect(pipelineRun.spec.timeouts).toEqual({ pipeline: '2h' });
   });
 
   it('omits spec.timeouts when no timeout is set', () => {
     const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
-    new PACProject({ namespace: 'ci', pipelines: [pipeline] });
+    new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
     const pipelineRun = capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'PipelineRun');
     expect(pipelineRun.spec.timeouts).toBeUndefined();
+  });
+
+  describe('Repository CR', () => {
+    const findRepo = () =>
+      capturedCharts.flatMap((c: any) => c.toJson()).find((o: any) => o.kind === 'Repository');
+
+    it('is not emitted when repository is omitted', () => {
+      const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
+      new TektonicProject({ namespace: 'ci', pipelines: [pipeline] });
+      expect(findRepo()).toBeUndefined();
+    });
+
+    it('emits a minimal Repository (GitHub-App style: url only)', () => {
+      const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
+      new TektonicProject({
+        name: 'app',
+        namespace: 'ci',
+        pipelines: [pipeline],
+        repository: { url: 'https://github.com/pfenerty/app' },
+      });
+      const repo = findRepo();
+      expect(repo.apiVersion).toBe('pipelinesascode.tekton.dev/v1alpha1');
+      expect(repo.metadata.namespace).toBe('ci');
+      expect(repo.spec.url).toBe('https://github.com/pfenerty/app');
+      expect(repo.spec.git_provider).toBeUndefined();
+    });
+
+    it('emits a git_provider block with secret refs when configured', () => {
+      const pipeline = new GitPipeline({ name: 'push', triggers: [TRIGGER_EVENTS.PUSH], tasks: [buildTask] });
+      new TektonicProject({
+        namespace: 'ci',
+        pipelines: [pipeline],
+        repository: {
+          url: 'https://gitlab.com/acme/app',
+          gitProvider: { type: 'gitlab', secretName: 'gl-token', webhookSecretName: 'gl-webhook' },
+        },
+      });
+      const repo = findRepo();
+      expect(repo.spec.git_provider.type).toBe('gitlab');
+      expect(repo.spec.git_provider.secret).toEqual({ name: 'gl-token', key: 'token' });
+      expect(repo.spec.git_provider.webhook_secret).toEqual({ name: 'gl-webhook', key: 'webhook.secret' });
+    });
   });
 });
 

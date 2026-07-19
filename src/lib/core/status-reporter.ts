@@ -15,7 +15,7 @@ export interface StatusReporter {
    * This task should run before any other task in the pipeline.
    *
    * `name` lets the caller scope the task name per pipeline, so multi-pipeline
-   * projects (e.g. PACProject emitting one file per unique task name) don't
+   * projects (e.g. TektonicProject emitting one file per unique task name) don't
    * collide on a single shared `set-status-pending` task.
    */
   createPendingTask(contexts: string[], name?: string): Task;

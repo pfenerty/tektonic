@@ -5,7 +5,7 @@ metadata:
   namespace: tektonic-ci
 spec:
   params:
-    - name: ref
+    - name: source-branch
       type: string
     - name: repo-full-name
       type: string
@@ -26,20 +26,20 @@ spec:
           - ALL
     workingDir: $(workspaces.workspace.path)
   steps:
-    - image: ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0
+    - env:
+        - name: CLOUDSDK_CONFIG
+          value: /tekton/home/.config/gcloud
+      image: ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0
       name: restore-grype-db-cache
       script: |-
         #!/usr/bin/env nu
-        def log [msg: string] {
-          print $"[(date now | format date '%H:%M:%S')] restore-grype-db-cache: ($msg)"
-        }
-
+        def log [msg: string] { print $"[(date now | format date '%H:%M:%S')] ($msg)" }
         let hash = ("" | hash sha256 | str substring 0..15)
         $hash | save -f /tekton/home/.cache-grype-db-hash
 
         let object = $"grype/($hash).tar.zst"
         let gcs_url = $"gs://tektonic-ci-cache/($object)"
-        log $"checking ($gcs_url)"
+        log $"restore-grype-db-cache: checking ($gcs_url)"
 
         let exists = ((^gcloud storage ls $gcs_url | complete).exit_code == 0)
         if $exists {
@@ -47,23 +47,24 @@ spec:
             ^gcloud storage ls -l $gcs_url
             | lines | first | str trim | split words | first | into int
           )
-          log $"hit ($hash) size=(($size / 1_000_000) | math round --precision 1)MB"
+          log $"restore-grype-db-cache: hit ($hash) size=(($size / 1_000_000) | math round --precision 1)MB"
           let cache_paths = ["grype-db"]
           for p in $cache_paths {
             if ($p | path exists) { ^chmod -R u+w $p; rm -rf $p }
           }
-          log "downloading ..."
+          log "restore-grype-db-cache: downloading ..."
           let t0 = (date now)
           ^gcloud --verbosity=error storage cp $gcs_url - | ^zstd -d -T0 -c | ^tar xf - -o --no-same-permissions
           let elapsed = (((date now) - $t0) | into int) / 1_000_000_000
           let speed = (if $elapsed > 0 { ($size / 1_000_000) / $elapsed | math round --precision 1 } else { 0 })
-          log $"restored in ($elapsed)s ($speed) MB/s"
+          log $"restore-grype-db-cache: restored in ($elapsed)s ($speed) MB/s"
         } else {
-          log $"miss ($hash) — object not found in bucket"
+          log $"restore-grype-db-cache: miss ($hash) — object not found in bucket"
         }
       workingDir: $(workspaces.workspace.path)
     - image: ghcr.io/pfenerty/apko-cicd/syft:1.42.3
       name: generate-sbom
+      onError: continue
       script: |-
         #!/usr/bin/env nu
         def log [msg: string] {
@@ -111,13 +112,7 @@ spec:
           let size = (ls scan.sarif | get size.0)
           log $"sarif size: ($size)"
         }
-    - env:
-        - name: GITHUB_TOKEN
-          valueFrom:
-            secretKeyRef:
-              key: token
-              name: github-token
-      image: ghcr.io/pfenerty/apko-cicd/base:stable
+    - image: ghcr.io/pfenerty/apko-cicd/base:stable
       name: upload-sarif
       onError: continue
       script: |-
@@ -136,7 +131,7 @@ spec:
           exit 0
         }
 
-        let ref_raw = "$(params.ref)"
+        let ref_raw = "$(params.source-branch)"
         let ref = if ($ref_raw | str starts-with "refs/") { $ref_raw } else { $"refs/heads/($ref_raw)" }
         log $"ref: ($ref)"
 
@@ -162,23 +157,23 @@ spec:
         } catch { |e|
           log $"upload failed: ($e.msg)"
         }
-    - image: ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0
+    - env:
+        - name: CLOUDSDK_CONFIG
+          value: /tekton/home/.config/gcloud
+      image: ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0
       name: save-grype-db-cache
       onError: continue
       script: |-
         #!/usr/bin/env nu
-        def log [msg: string] {
-          print $"[(date now | format date '%H:%M:%S')] save-grype-db-cache: ($msg)"
-        }
-
+        def log [msg: string] { print $"[(date now | format date '%H:%M:%S')] ($msg)" }
         let hash = (try { open --raw /tekton/home/.cache-grype-db-hash | str trim } catch { "" })
-        if ($hash | is-empty) { log "no hash, skipping"; exit 0 }
+        if ($hash | is-empty) { log "save-grype-db-cache: no hash, skipping"; exit 0 }
 
         let object = $"grype/($hash).tar.zst"
         let gcs_url = $"gs://tektonic-ci-cache/($object)"
 
         let paths = ["grype-db"] | where { |p| ($p | path exists) }
-        if ($paths | is-empty) { log "no paths to cache"; exit 0 }
+        if ($paths | is-empty) { log "save-grype-db-cache: no paths to cache"; exit 0 }
 
         for p in $paths { ^chmod -R u+w $p }
 
@@ -195,63 +190,60 @@ spec:
             | sort-by created | reverse | skip $max
           } catch { [] })
           for e in $entries {
-            ^gcloud storage rm $e.url | complete | ignore
-            log $"evicted ($e.url)"
+            let result = (^gcloud storage rm $e.url | complete)
+            if $result.exit_code == 0 {
+              log $"save-grype-db-cache: evicted ($e.url)"
+            } else {
+              log $"save-grype-db-cache: warn: failed to evict ($e.url): ($result.stderr)"
+            }
           }
         }
 
         let uncompressed = ($paths | each { |p| try { du $p | get apparent.0 | into int } catch { 0 } } | math sum)
-        log $"compressing (($uncompressed / 1_000_000) | math round --precision 1)MB ..."
+        log $"save-grype-db-cache: compressing (($uncompressed / 1_000_000) | math round --precision 1)MB ..."
         let tmp = $"$(workspaces.workspace.path)/cache-($hash).tar.zst"
         let t0 = (date now)
         ^tar cf - ...$paths | ^zstd -3 -T0 -f -o $tmp
         let compress_elapsed = (((date now) - $t0) | into int) / 1_000_000_000
         let compressed = (ls $tmp | get size.0 | into int)
         let ratio = (if $compressed > 0 { $uncompressed / $compressed | math round --precision 1 } else { 0 })
-        log $"compressed to (($compressed / 1_000_000) | math round --precision 1)MB ratio=($ratio)x in ($compress_elapsed)s"
+        log $"save-grype-db-cache: compressed to (($compressed / 1_000_000) | math round --precision 1)MB ratio=($ratio)x in ($compress_elapsed)s"
 
-        log "uploading ..."
+        log "save-grype-db-cache: uploading ..."
         let t1 = (date now)
         ^gcloud storage cp $tmp $gcs_url
         rm $tmp
         let upload_elapsed = (((date now) - $t1) | into int) / 1_000_000_000
         let speed = (if $upload_elapsed > 0 { ($compressed / 1_000_000) / $upload_elapsed | math round --precision 1 } else { 0 })
-        log $"uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"
+        log $"save-grype-db-cache: uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"
       workingDir: $(workspaces.workspace.path)
-    - env:
-        - name: GITHUB_TOKEN
-          valueFrom:
-            secretKeyRef:
-              key: token
-              name: github-token
+    - env: []
       image: ghcr.io/pfenerty/apko-cicd/base:stable
       name: report-status
       script: |-
         #!/usr/bin/env nu
-        def log [msg: string] {
-          print $"[(date now | format date '%H:%M:%S')] report-status [anchore-scan]: ($msg)"
-        }
-
+        def log [msg: string] { print $"[(date now | format date '%H:%M:%S')] ($msg)" }
         let exit_code = (try { open --raw /tekton/home/.exit-code | str trim | into int } catch { 1 })
         let state = if $exit_code == 0 { "success" } else { "failure" }
         let desc = if $exit_code == 0 { "Passed" } else { "Failed" }
 
-        log $"exit-code=($exit_code) state=($state)"
+        log $"report-status [anchore-scan]: exit-code=($exit_code) state=($state)"
 
         let url = $"https://api.github.com/repos/$(params.repo-full-name)/statuses/$(params.revision)"
         let body = { state: $state, context: "anchore-scan", description: $desc }
 
-        log $"POST ($url)"
-        log $"body: ($body | to json -r)"
+        log $"report-status [anchore-scan]: POST ($url)"
+        log $"report-status [anchore-scan]: body: ($body | to json -r)"
 
         try {
           http post $url $body -t application/json -H [
             Authorization $"token ($env.GITHUB_TOKEN)"
             Accept "application/vnd.github+json"
           ]
-          log "done"
+          log "report-status [anchore-scan]: done"
         } catch { |e|
-          log $"error: ($e.msg)"
+          log $"report-status [anchore-scan]: error: ($e.msg)"
         }
+        exit $exit_code
   workspaces:
     - name: workspace

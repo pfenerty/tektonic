@@ -2,7 +2,7 @@ import {
     Workspace,
     Task,
     GitPipeline,
-    TektonProject,
+    TektonicProject,
     TRIGGER_EVENTS,
 } from "../src";
 
@@ -91,12 +91,10 @@ const lintPipeline = new GitPipeline({
 });
 
 // ─── Synthesize ──────────────────────────────────────────────────────────────
-new TektonProject({
+new TektonicProject({
     name: "homelab",
     namespace: "tekton-builds",
     pipelines: [pushPipeline, prPipeline, lintPipeline],
-    webhookSecretRef: {
-        secretName: "github-webhook-secret",
-        secretKey: "secret",
-    },
+    outdir: ".tekton",
+    repository: { url: "https://github.com/pfenerty/homelab" },
 });

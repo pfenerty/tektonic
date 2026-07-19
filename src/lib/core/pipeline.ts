@@ -13,7 +13,7 @@ export interface PipelineOptions {
    * (e.g. `"push-pipeline"` for a single push trigger).
    */
   name?: string;
-  /** Trigger events that should start this pipeline (used by {@link TektonProject} to wire webhooks). */
+  /** Trigger events that should start this pipeline (mapped to PAC's `on-event` by {@link TektonicProject}). */
   triggers?: TRIGGER_EVENTS[];
   /** Top-level tasks. Transitive dependencies are auto-discovered via `task.needs`. */
   tasks: TaskLike[];
@@ -22,7 +22,7 @@ export interface PipelineOptions {
   /** Additional pipeline-level params not tied to any specific task. */
   params?: Param[];
   /**
-   * Target branch filter used by {@link PACProject} for the
+   * Target branch filter used by {@link TektonicProject} for the
    * `pipelinesascode.tekton.dev/on-target-branch` annotation.
    * Accepts a glob pattern. Defaults to `"*"` (all branches).
    * Ignored for `TRIGGER_EVENTS.TAG` pipelines, which always target `"refs/tags/*"`.
@@ -30,7 +30,7 @@ export interface PipelineOptions {
   onTargetBranch?: string;
   /**
    * Overall PipelineRun timeout as a Go duration string (e.g. `"2h"`, `"90m"`).
-   * Emitted by {@link PACProject} as `spec.timeouts.pipeline`. When unset, Tekton's
+   * Emitted by {@link TektonicProject} as `spec.timeouts.pipeline`. When unset, Tekton's
    * default (1h) applies — raise it for long pipelines (e.g. many image builds).
    */
   timeout?: string;
@@ -58,7 +58,7 @@ export class Pipeline {
    * Defaults to `"*"`. Ignored for TAG pipelines, which always use `"refs/tags/*"`.
    */
   readonly onTargetBranch: string;
-  /** Overall PipelineRun timeout (Go duration), emitted by PACProject. Unset = Tekton default. */
+  /** Overall PipelineRun timeout (Go duration), emitted by TektonicProject. Unset = Tekton default. */
   readonly timeout?: string;
   private readonly extraParams: Param[];
   /** @internal Auto-generated task that sets all status contexts to pending at pipeline start. */
@@ -146,8 +146,7 @@ export class Pipeline {
 
   /**
    * @internal Returns the Pipeline spec as a plain object.
-   * Used by {@link TektonProject} via `_build()` and by {@link PACProject} to inline
-   * the spec into a PAC PipelineRun template.
+   * Used by {@link TektonicProject} to inline the spec into a PAC PipelineRun template.
    */
   _buildSpec(
     extraParams?: Record<string, unknown>[],
@@ -169,7 +168,11 @@ export class Pipeline {
     };
   }
 
-  /** @internal Synthesizes the Pipeline resource. Called by {@link TektonProject}. */
+  /**
+   * @internal Synthesizes a standalone `kind: Pipeline` resource. Not used by the PAC
+   * synthesizer (which inlines the spec via {@link Pipeline._buildSpec}); retained for
+   * tests and custom synthesis.
+   */
   _build(
     scope: Construct,
     id: string,

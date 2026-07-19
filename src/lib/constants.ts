@@ -1,18 +1,7 @@
 /** Tekton Pipelines v1 API version. */
 export const TEKTON_API_V1 = "tekton.dev/v1";
-/** Tekton Triggers v1beta1 API version. */
-export const TRIGGERS_API = "triggers.tekton.dev/v1beta1";
-/** API version used for PipelineRun resources. */
-export const PIPELINE_RUN_API = "tekton.dev/v1";
-
-/** Default service account name for trigger infrastructure. */
-export const DEFAULT_SERVICE_ACCOUNT = "tekton-triggers";
-/** Default PVC storage size for pipeline workspace volumes. */
-export const DEFAULT_WORKSPACE_STORAGE = "1Gi";
-
-/** CEL expression that constructs the GitHub repository URL from webhook payload. */
-export const GITHUB_REPO_URL =
-    "https://github.com/$(body.repository.full_name)";
+/** Pipelines as Code (PAC) API version, used for the `Repository` custom resource. */
+export const PAC_API = "pipelinesascode.tekton.dev/v1alpha1";
 
 /**
  * Default pod-level security context applied to every PipelineRun pod.

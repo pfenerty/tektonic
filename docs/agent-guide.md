@@ -8,7 +8,7 @@ A complete reference for agents creating Tekton CI/CD pipelines with this librar
 - **`Task`** maps to one Tekton Task: a list of steps, optional params/workspaces, optional caches, and an optional status reporter.
 - **Step scripts** are typed: author them with the `sh`/`bash`/`nu`/`py` tagged templates or load a real file with `scriptFromFile`. The framework owns the exit-code/status plumbing. See [scripting.md](scripting.md).
 - **`GitPipeline`** wires tasks together: it auto-creates a `git-clone` step, threads the shared workspace through every task, and walks the `needs` graph to set `runAfter`. `TRIGGER_EVENTS` controls which GitHub events fire it.
-- **`TektonProject`** is the synthesizer for cluster-deployed pipelines + triggers. Calling `new TektonProject(...)` writes all Kubernetes manifests (Tasks, Pipeline, RBAC, EventListener, TriggerBindings/Templates, PVCs) to `outdir`. **`PACProject`** is the alternative synthesizer for [Pipelines as Code](pac.md) (in-repo `.tekton/` PipelineRun templates).
+- **`TektonicProject`** is the synthesizer. Calling `new TektonicProject(...)` writes in-repo [Pipelines as Code](pac.md) artifacts to `outdir`: a `Task` YAML per task under `tasks/`, a PAC-annotated `PipelineRun` template per triggered pipeline (spec inlined), and an optional `Repository` custom resource. The PAC operator reads these from the pushed commit — no EventListener or RBAC to run.
 
 ## Installation
 
@@ -29,7 +29,7 @@ npx ts-node ci/pipeline.ts
 import {
   Task,
   GitPipeline,
-  TektonProject,
+  TektonicProject,
   TRIGGER_EVENTS,
   sh,
 } from '@pfenerty/tektonic';
@@ -53,16 +53,13 @@ const pipeline = new GitPipeline({
   tasks: [test],
 });
 
-// Synthesize everything to YAML
-new TektonProject({
+// Synthesize everything to in-repo PAC YAML
+new TektonicProject({
   name: 'my-app',         // prefix for all resource names
   namespace: 'tekton-ci', // Kubernetes namespace
   pipelines: [pipeline],
-  outdir: '.tekton',      // output directory
-  webhookSecretRef: {     // Kubernetes Secret for GitHub webhook validation
-    secretName: 'github-webhook-secret',
-    secretKey: 'secret',
-  },
+  outdir: '.tekton',      // output directory (commit this to your repo)
+  repository: { url: 'https://github.com/my-org/my-app' }, // optional PAC Repository CR
 });
 ```
 
@@ -181,19 +178,23 @@ const pipeline = new GitPipeline({
 | `TRIGGER_EVENTS.PULL_REQUEST` | PR opened/synchronized |
 | `TRIGGER_EVENTS.TAG` | Tag push |
 
-## TektonProject
+## TektonicProject
+
+The synthesizer. It emits in-repo [Pipelines as Code](https://pipelinesascode.tekton.dev/)
+artifacts read by the PAC operator from the pushed commit.
 
 ```typescript
-new TektonProject({
+new TektonicProject({
   name: 'my-app',           // Resource name prefix
   namespace: 'tekton-ci',   // Kubernetes namespace
   pipelines: [pipeline],
-  outdir: '.tekton',
+  outdir: '.tekton',        // commit this directory to your repo
 
-  // GitHub webhook validation
-  webhookSecretRef: {
-    secretName: 'github-webhook-secret',
-    secretKey: 'secret',
+  // Optional PAC Repository CR (repo ↔ namespace, + provider auth)
+  repository: {
+    url: 'https://github.com/my-org/my-app',
+    // gitProvider omitted → PAC GitHub App (URL matching). For token/webhook installs:
+    // gitProvider: { type: 'github', secretName: 'gh-token', webhookSecretName: 'gh-webhook' },
   },
 
   // Ephemeral workspace PVC (created fresh each PipelineRun)
@@ -206,15 +207,14 @@ new TektonProject({
     { workspace: cacheWorkspace, storageSize: '5Gi', storageClassName: 'standard' },
   ],
 
-  // Pipeline param names (match what you declare in your pipelines)
-  urlParam: 'url',          // default
-  revisionParam: 'revision', // default
-  gitRefParam: 'ref',       // optional — add if tasks need the branch ref
+  // PAC retains this many completed runs per repo (default 5)
+  maxKeepRuns: 5,
 
-  // GKE Workload Identity binding for the triggers ServiceAccount
-  serviceAccountAnnotations: {
-    'iam.gke.io/gcp-service-account': 'tekton-ci@my-project.iam.gserviceaccount.com',
-  },
+  // Inject env into every TaskRun pod — e.g. the PAC git-auth token
+  podTemplateEnv: [{
+    name: 'GITHUB_TOKEN',
+    valueFrom: { secretKeyRef: { name: '{{ git_auth_secret }}', key: 'git-provider-token' } },
+  }],
 
   // Security context overrides
   defaultPodSecurityContext: { fsGroup: 1000 },
@@ -223,20 +223,19 @@ new TektonProject({
 ```
 
 **What gets generated** in `outdir`:
-- One `Task` manifest per task
-- One `Pipeline` manifest per `GitPipeline`
-- `EventListener`, `TriggerBinding`, `TriggerTemplate` per trigger
-- RBAC (`ServiceAccount`, `ClusterRole`, `ClusterRoleBinding`)
-- `PersistentVolumeClaim` for each `caches` entry (not for GCS backends)
-- `kustomization.yaml` listing all manifests
+- A `Task` YAML file per unique task under `tasks/`
+- A PAC-annotated `PipelineRun` template per triggered pipeline (the pipeline spec is inlined;
+  `triggers` → `on-event`, `onTargetBranch` → `on-target-branch`)
+- A `Repository` custom resource when `repository` is set
+- A `PersistentVolumeClaim` is *not* generated — bind cache PVCs via the `caches` option; PAC
+  binds them into each PipelineRun
 
-## PACProject
-
-If your cluster runs [Pipelines as Code](https://pipelinesascode.tekton.dev/), use `PACProject`
-instead of `TektonProject`. It emits in-repo `.tekton/` PipelineRun templates (read from the
-pushed commit) and per-task files, binding well-known params (`url`, `revision`,
-`repo-full-name`, `source-branch`) to PAC `{{ }}` variables — no EventListener or RBAC needed.
-The pipeline/task model is identical; only the synthesizer changes. See [pac.md](pac.md).
+Well-known params are bound to PAC variables automatically: `url` → `{{ repo_url }}`, `revision`
+→ `{{ revision }}`, `repo-full-name` → `{{ repo_owner }}/{{ repo_name }}`, `source-branch` →
+`{{ source_branch }}`. See [pac.md](pac.md) for the full model. Status reporting is available
+two ways: PAC reports the PipelineRun outcome to the provider natively, and `GitHubStatusReporter`
+(below) adds per-context commit statuses — use `skipTokenInjection: true` under PAC so it reuses
+the git-auth token from `podTemplateEnv`.
 
 ## Caching
 
@@ -251,17 +250,17 @@ caches: [{
   name: 'npm',                          // used in step names: restore-npm-cache / save-npm-cache
   key: ['package-lock.json'],           // files whose content determines the cache key
   paths: ['node_modules'],              // directories to restore/save
-  backend: { type: 'gcs', bucket: 'my-ci-cache', prefix: 'npm/' },
+  backend: gcs({ bucket: 'my-ci-cache', prefix: 'npm/' }),
   compress: true,                       // zstd compression (recommended for GCS)
   workingDir: '$(workspaces.workspace.path)',
 }]
-// No CacheSpec entry needed in TektonProject
-// Set serviceAccountAnnotations on TektonProject for Workload Identity
+// No CacheSpec entry needed in TektonicProject for GCS.
+// Workload Identity: annotate the PipelineRun ServiceAccount out of band (PAC does not create it).
 ```
 
 ### PVC backend (homelab / NFS)
 
-Archives stored on a PersistentVolumeClaim. Declare the workspace and register it in `TektonProject.caches`.
+Archives stored on a PersistentVolumeClaim. Declare the workspace and register it in `TektonicProject.caches`.
 
 ```typescript
 const npmCache = new Workspace({ name: 'npm-cache' });
@@ -276,7 +275,7 @@ caches: [{
   workingDir: '$(workspaces.workspace.path)',
 }]
 
-// In TektonProject:
+// In TektonicProject:
 caches: [{ workspace: npmCache, storageSize: '5Gi' }]
 ```
 
@@ -287,7 +286,7 @@ caches: [{ workspace: npmCache, storageSize: '5Gi' }]
 | `name` | required | Step name prefix (`restore-{name}-cache`) |
 | `key` | required | Key files; `[]` = fixed hash (always hits after first run) |
 | `paths` | required | Paths to cache relative to `workingDir` |
-| `backend` | PVC | `{ type: 'gcs', bucket, prefix? }` for GCS |
+| `backend` | PVC | `gcs({ bucket, prefix? })` for GCS |
 | `workspace` | — | Required for PVC backend |
 | `compress` | `false` | zstd compression into `.tar.zst` archive |
 | `compressionLevel` | `1` | zstd level 1–19 |
@@ -442,18 +441,16 @@ const deploy = new Task({
 | `or(...)` | logical OR | single CEL guard |
 | `not(c)` | negation | flips `in`↔`notin`, else CEL |
 
-`onBranch*` reference the normalized `source-branch` pipeline param (e.g. `main`). Both
-synthesizers plumb it automatically: `TektonProject` via the GitHub triggers (stripping
-`refs/heads/` on push, using the PR head branch on pull requests) and `PACProject` via
-`{{ source_branch }}`. For a plain `Pipeline` with no triggers, supply a `source-branch` param
-yourself, or pass your own `Result` to `equals`/`matches`.
+`onBranch*` reference the normalized `source-branch` pipeline param (e.g. `main`), which
+`TektonicProject` binds to PAC's `{{ source_branch }}` variable. For a plain `Pipeline` with no
+triggers, supply a `source-branch` param yourself, or pass your own `Result` to `equals`/`matches`.
 
 ### File-change rules (`onChanges`)
 
 Gate a job on **whether files changed at runtime** (GitLab `rules:changes`). `onChanges(paths)`
-creates a detection task that diffs the checked-out commit against a base and writes a boolean
-result, then returns a `Condition` gating on it. The detection task is **auto-wired** into the
-graph — no manual `needs`.
+creates a detection task that diffs the checked-out commit against a **trunk branch** and writes a
+boolean result, then returns a `Condition` gating on it. The detection task is **auto-wired** into
+the graph — no manual `needs`.
 
 ```typescript
 import { Task, onBranch, onChanges, or } from '@pfenerty/tektonic';
@@ -467,20 +464,19 @@ const integration = new Task({
 ```
 
 `onChanges` accepts an array of git glob pathspecs, or an options object
-(`{ paths, name?, base?, image?, workspace? }`). The **diff base** comes from the `diff-base`
-pipeline param, which the triggers supply per event: on push, the previous commit
-(`body.before`); on pull requests, the target branch tip (`base.sha`). Under `PACProject`,
-`diff-base` binds to `{{ target_branch }}`.
+(`{ paths, name?, base?, image?, workspace? }`). The detection task fetches the **trunk branch**
+(`base`, default `'main'`) and diffs `base...HEAD` (three-dot merge-base) — i.e. the paths this
+branch changed relative to trunk. This works uniformly on push and pull_request without any
+trigger plumbing.
 
 **Notes & limits:**
-- Detection uses `git diff` in-repo (no token, portable). It **fails open** (treats as changed)
-  when the base can't be fetched (e.g. a brand-new branch).
+- Detection uses `git diff` in-repo (no token, portable). It is **accurate with**
+  `GitPipeline({ cloneDepth: 'full' })`; on the default shallow clone the merge-base is
+  unreachable and detection **fails open** (the gated job runs). It also fails open when the trunk
+  can't be fetched (e.g. a brand-new repo).
 - `onChanges` creates one detection task named `detect-changes` by default — reuse the returned
   `Condition`, or pass `name` for multiple independent change checks (duplicate task names are
-  rejected by pipeline validation).
-- Under `PACProject`, PAC exposes no previous-commit variable for **push** events (`diff-base`
-  falls back to `{{ target_branch }}`), so change detection is most meaningful on **pull_request**
-  events there. `TektonProject` push uses the real previous commit.
+  rejected by pipeline validation). Override the trunk with `base` (e.g. `{ paths, base: 'develop' }`).
 - For a plain `Pipeline` (no `GitPipeline`), pass `workspace` so the detection task has the repo.
 
 > **Classic vs. CEL.** Exact-match rules (`equals`, `isIn`, `onBranch`, …) use Tekton's classic
@@ -635,37 +631,12 @@ const dbTest = new Task({
 
 ---
 
-## VcsProvider
+## Multi-provider
 
-`VcsProvider` is a pluggable interface for generating Tekton trigger resources. The default is `GitHubVcsProvider`. Override via `TektonProject.providers` to add support for GitLab, Gitea, or other VCS hosts without modifying the library.
-
-```typescript
-import { GitHubVcsProvider } from '@pfenerty/tektonic';
-
-// Default (GitHub) — explicit form:
-new TektonProject({
-  providers: [new GitHubVcsProvider()],
-  // ... rest of options
-});
-
-// Custom provider — implement VcsProvider:
-class MyGitLabProvider implements VcsProvider {
-  readonly supportedEvents = [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.PULL_REQUEST];
-
-  buildTrigger(scope, pipelineRef, event, ctx): VcsTriggerContribution {
-    // Create TriggerBinding + TriggerTemplate ApiObjects under `scope`
-    // Return the EventListener trigger entry
-    ...
-  }
-}
-
-new TektonProject({
-  providers: [new MyGitLabProvider()],
-  // ...
-});
-```
-
-`VcsProviderCtx` carries all project-level settings (namespace, namePrefix, webhookSecretRef, workspace storage, etc.) plus `allEvents` — the full list of configured events, used for cross-event CEL filtering (e.g. excluding tag pushes from the push trigger when a tag pipeline is also configured).
+Because output is Pipelines as Code, provider support (GitHub, GitLab, Bitbucket, Gitea, …) is
+handled by the PAC operator, not by Tektonic — there is no per-provider trigger code to write.
+Select the provider, if needed, via `repository.gitProvider.type`; the pipeline/task model is
+identical across providers.
 
 ---
 
@@ -687,7 +658,7 @@ import {
     Param,
     Task,
     GitPipeline,
-    TektonProject,
+    TektonicProject,
     TRIGGER_EVENTS,
     GitHubStatusReporter,
     DEFAULT_BASE_IMAGE,
@@ -708,7 +679,7 @@ const npmTest = new Task({
         name: 'npm',
         key: ['package-lock.json'],
         paths: ['node_modules'],
-        backend: { type: 'gcs', bucket: gcsBucket, prefix: 'npm/' },
+        backend: gcs({ bucket: gcsBucket, prefix: 'npm/' }),
         compress: true,
         workingDir: '$(workspaces.workspace.path)',
     }],
@@ -733,7 +704,7 @@ const npmBuild = new Task({
         name: 'npm',
         key: ['package-lock.json'],
         paths: ['node_modules'],
-        backend: { type: 'gcs', bucket: gcsBucket, prefix: 'npm/' },
+        backend: gcs({ bucket: gcsBucket, prefix: 'npm/' }),
         compress: true,
         workingDir: '$(workspaces.workspace.path)',
     }],
@@ -756,7 +727,7 @@ const anchoreScann = new Task({
         name: 'grype-db',
         key: [],           // empty key = fixed hash = always hits after first run
         paths: ['grype-db'],
-        backend: { type: 'gcs', bucket: gcsBucket, prefix: 'grype/' },
+        backend: gcs({ bucket: gcsBucket, prefix: 'grype/' }),
         compress: true,
         forceSave: true,   // grype updates the DB in-place; always save
         maxEntries: 1,
@@ -804,17 +775,18 @@ const prPipeline = new GitPipeline({
     tasks: [npmTest, npmBuild, anchoreScann],
 });
 
-new TektonProject({
+new TektonicProject({
     name: 'my-app',
     namespace: 'tekton-ci',
     pipelines: [pushPipeline, prPipeline],
     outdir: '.tekton',
     workspaceStorageSize: '3Gi',
-    webhookSecretRef: { secretName: 'github-webhook-secret', secretKey: 'secret' },
-    gitRefParam: 'ref',
-    serviceAccountAnnotations: {
-        'iam.gke.io/gcp-service-account': 'tekton-ci@my-project.iam.gserviceaccount.com',
-    },
+    repository: { url: 'https://github.com/my-org/my-app' },
+    // Provide the GitHub token (status reporting, SARIF upload) via PAC's git-auth secret.
+    podTemplateEnv: [{
+        name: 'GITHUB_TOKEN',
+        valueFrom: { secretKeyRef: { name: '{{ git_auth_secret }}', key: 'git-provider-token' } },
+    }],
 });
 ```
 

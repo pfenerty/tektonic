@@ -26,21 +26,19 @@ the ceremony and stringly-typed fragility of hand-written YAML. Three principles
 src/
 ├── index.ts                  # the entire public API surface (re-exports)
 ├── constants.ts              # API versions, security contexts, default images/resources
-├── charts/
-│   └── tekton-infra.chart.ts # cdk8s Chart for TektonProject's trigger infrastructure
 └── lib/
     ├── core/                 # primitives + orchestrators + extension interfaces
     │   ├── param.ts  workspace.ts  result.ts        # named handles, stringify to $(...) exprs
     │   ├── task.ts                                   # TaskDef: the synthesizable unit of work
     │   ├── pipeline.ts  git-pipeline.ts             # graph discovery, validation, topo-sort
     │   ├── pipeline-task.ts                          # gated() per-edge overrides (when/retry/timeout)
-    │   ├── tekton-project.ts  pac-project.ts        # the two synthesizers
+    │   ├── condition.ts  changes.ts                  # typed rules DSL + onChanges detection
+    │   ├── tektonic-project.ts                       # the PAC synthesizer
     │   ├── hub-task-ref.ts                           # TaskLike that references an ArtifactHub task
     │   ├── cache-backend.ts  status-reporter.ts     # extension interfaces
     │   └── trigger-events.ts
     ├── script/               # ScriptLanguage plugins (sh/bash/nushell/python) + from-file
     ├── cache/                # PvcBackend, GcsBackend, shared cache helpers
-    ├── triggers/             # VcsProvider + GitHub triggers
     └── reporters/            # GitHubStatusReporter
 ```
 
@@ -63,7 +61,7 @@ Nothing is emitted until a synthesizer runs. The pipeline:
    detects status-reporting tasks and prepends a generated "set pending" task, and collects
    cache `finally` tasks. `GitPipeline` additionally creates the git-clone task and threads the
    shared workspace through every task.
-4. **Synthesize.** `TektonProject`/`PACProject` call `pipeline._buildSpec()`, which validates the
+4. **Synthesize.** `TektonicProject`/`TektonicProject` call `pipeline._buildSpec()`, which validates the
    graph, topologically sorts it, infers the param/workspace union, and emits the spec. Each
    `TaskDef.synth()` renders its steps (including injected restore/save/reporter steps and
    script wrapping) into a cdk8s `ApiObject`. cdk8s writes the YAML.
@@ -97,19 +95,17 @@ Nothing is emitted until a synthesizer runs. The pipeline:
 This is the pattern to follow for new opinionated pipeline types: subclass `Pipeline`, override
 `runAfterFor`, mutate only idempotently.
 
-### The two synthesizers
+### The synthesizer
 
-Both consume the same `Pipeline._buildSpec()` output; they differ in what they wrap it in:
-
-- **`TektonProject`** emits standalone `Pipeline` resources plus the trigger stack
-  (EventListener, TriggerBindings/Templates, RBAC) via the `VcsProvider`s and the infra chart.
-- **`PACProject`** emits per-pipeline PAC `PipelineRun` templates with the spec **inlined**, plus
-  one `Task` file per unique task, and binds well-known params to PAC `{{ }}` variables. See
-  [pac.md](pac.md).
+`TektonicProject` consumes `Pipeline._buildSpec()` and emits per-pipeline PAC `PipelineRun`
+templates with the spec **inlined**, one `Task` file per unique task, and an optional `Repository`
+custom resource — binding well-known params to PAC `{{ }}` variables. PAC (the operator) owns
+webhook delivery, event matching, status reporting, and multi-provider support, so Tektonic has no
+trigger/EventListener/RBAC code of its own. See [pac.md](pac.md).
 
 ## Extension points
 
-Tektonic has four strategy interfaces. Adding a provider means implementing one — never editing
+Tektonic has three strategy interfaces. Adding a provider means implementing one — never editing
 the core. Each is exported from `index.ts`.
 
 ### `ScriptLanguage` (`src/lib/script/types.ts`)
@@ -126,12 +122,6 @@ Returns a `restoreStep` and `saveStep` for a `TaskCacheSpec`. `needsPvcWorkspace
 `TaskDef` whether to auto-register the cache workspace and wire finally-task workspaces. `PvcBackend`
 and `GcsBackend` are the built-ins; shared key-hashing/compression helpers live in
 `src/lib/cache/shared.ts`. See [cache-backends.md](cache-backends.md).
-
-### `VcsProvider` (`src/lib/triggers/vcs-provider.ts`)
-
-Builds the trigger resources for a pipeline/event under a cdk8s scope and returns the
-EventListener entry. `GitHubVcsProvider` is the default; implement this for GitLab/Gitea/etc. and
-pass it via `TektonProject.providers`. See the [agent guide](agent-guide.md#vcsprovider).
 
 ### `StatusReporter` (`src/lib/core/status-reporter.ts`)
 

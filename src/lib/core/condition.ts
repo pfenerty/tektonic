@@ -207,10 +207,9 @@ export const normalizeWhen = (when: Condition | WhenClause[]): WhenClause[] =>
 
 /**
  * Well-known reference to the normalized branch name (e.g. `main`) for the current
- * pipeline run. Both synthesizers plumb this as the `source-branch` pipeline param —
- * `TektonProject` via the trigger bindings (stripping `refs/heads/` on push) and
- * `PACProject` via `{{ source_branch }}`. Branch rules reference it at authoring time
- * without a pipeline handle.
+ * pipeline run. {@link TektonicProject} plumbs it as the `source-branch` pipeline param
+ * via PAC's `{{ source_branch }}` variable, so branch rules reference it at authoring
+ * time without a pipeline handle.
  */
 export const GIT_BRANCH_REF = "$(params.source-branch)";
 

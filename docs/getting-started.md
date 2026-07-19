@@ -20,7 +20,7 @@ Params and workspaces are the data-passing primitives in Tekton. Create them as 
 
 ```typescript
 import {
-  Param, Workspace, Task, GitPipeline, TektonProject, TRIGGER_EVENTS,
+  Param, Workspace, Task, GitPipeline, TektonicProject, TRIGGER_EVENTS,
 } from '@pfenerty/tektonic';
 
 const workspace = new Workspace({ name: 'workspace' });
@@ -86,34 +86,37 @@ const prPipeline = new GitPipeline({
 
 `GitPipeline` also exposes `pipeline.workspace` and `pipeline.cloneTask` if you need to reference them.
 
-## 5. Synthesize with TektonProject
+## 5. Synthesize with TektonicProject
 
 ```typescript
-new TektonProject({
+new TektonicProject({
   name: 'tekton-pipelines',
   namespace: 'tekton-builds',
   pipelines: [pushPipeline, prPipeline],
-  outdir: 'ci-pipeline',
-  webhookSecretRef: {
-    secretName: 'github-webhook-secret',
-    secretKey: 'secret',
-  },
+  outdir: '.tekton',
+  repository: { url: 'https://github.com/my-org/my-app' },
 });
 ```
 
-This generates YAML files in `ci-pipeline/` containing:
-- A Tekton `Task` resource for each unique task (git-clone, test-npm, build-npm)
-- A Tekton `Pipeline` resource for each pipeline
-- Trigger infrastructure: ServiceAccount, RBAC, TriggerBindings, TriggerTemplates, EventListener
+This writes [Pipelines as Code](https://pipelinesascode.tekton.dev/) artifacts into `.tekton/`:
+- A `Task` YAML file per unique task under `.tekton/tasks/` (git-clone, test-npm, build-npm)
+- A PAC-annotated `PipelineRun` template per triggered pipeline (the pipeline spec is inlined)
+- A `Repository` custom resource (when `repository` is set) linking the repo to the namespace
 
-## 6. Apply to cluster
+## 6. Commit and let PAC run it
+
+PAC reads these files from the pushed commit — there's nothing to `kubectl apply` per run.
+Commit `.tekton/` to your repository:
 
 ```bash
-# Synthesize
-npx ts-node pipeline.ts
+npx ts-node pipeline.ts   # regenerate .tekton/
+git add .tekton && git commit -m "ci: update pipelines" && git push
+```
 
-# Apply all generated YAML
-kubectl apply -f ci-pipeline/
+Apply the generated `Repository` CR once (or manage it via GitOps):
+
+```bash
+kubectl apply -f .tekton/*-repository.k8s.yaml
 ```
 
 ## 7. (Optional) Add GitHub status reporting
@@ -152,29 +155,23 @@ Key points:
     --from-literal=token=YOUR_GITHUB_TOKEN
   ```
 
-## 8. (Optional) Add GitHub webhook triggers
+## 8. Connect the repository to PAC
 
-If any pipeline has `triggers` set, `TektonProject` automatically generates the trigger infrastructure. To complete the webhook setup:
+PAC handles webhook delivery and event matching for you — there's no EventListener to expose.
+Point the `repository` option at your repo and set up the PAC install once:
 
-1. **Create the webhook secret** in your cluster:
+1. **Install PAC** in the cluster (once): see the
+   [PAC installation guide](https://pipelinesascode.tekton.dev/docs/install/).
+2. **Authorize PAC to your repo** — either install the PAC **GitHub App** (URL matching is
+   enough; the generated `Repository` needs only `spec.url`), or configure a token/webhook
+   provider via `repository.gitProvider`.
+3. **Apply the `Repository` CR** so PAC knows which namespace runs this repo's pipelines:
    ```bash
-   kubectl create secret generic github-webhook-secret \
-     --namespace=tekton-builds \
-     --from-literal=secret=YOUR_WEBHOOK_SECRET
+   kubectl apply -f .tekton/*-repository.k8s.yaml
    ```
 
-2. **Expose the EventListener** (e.g. via Ingress or port-forward):
-   ```bash
-   kubectl port-forward -n tekton-builds svc/el-github-listener 8080
-   ```
-
-3. **Configure the webhook** in your GitHub repository settings:
-   - Payload URL: your EventListener endpoint
-   - Content type: `application/json`
-   - Secret: the same value as `YOUR_WEBHOOK_SECRET`
-   - Events: select "Pushes" and "Pull requests"
-
-See the [triggers guide](triggers.md) for more details on webhook configuration and customization.
+PAC matches events with the pipeline's `triggers` (→ `on-event`) and `onTargetBranch`
+(→ `on-target-branch`). See the [Pipelines as Code guide](pac.md) for details.
 
 ## Full example
 

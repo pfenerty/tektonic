@@ -38,12 +38,12 @@ kubectl create secret generic github-token \
 
 ### Project-wide env (PAC)
 
-To inject the same secret-backed env into **every** step of every task, use `PACProject`'s
+To inject the same secret-backed env into **every** step of every task, use `TektonicProject`'s
 `podTemplateEnv`. This is how the PAC git auth token is wired — its secret name is itself a PAC
 template variable resolved before the run reaches Kubernetes:
 
 ```typescript
-new PACProject({
+new TektonicProject({
   // ...
   podTemplateEnv: [{
     name: 'GITHUB_TOKEN',
@@ -117,7 +117,7 @@ universal `runAsUser`.
 ### Overriding
 
 - **Per project:** `defaultPodSecurityContext` / `defaultStepSecurityContext` on
-  `TektonProject`/`PACProject` are merged *over* the defaults.
+  `TektonicProject` are merged *over* the defaults.
 - **Per step:** `securityContext` on a `TaskStepSpec` is applied on top of the task's
   stepTemplate. This is the escape hatch for steps that genuinely need more privilege — e.g. a
   rootless buildkit step that needs `SETUID`/`SETGID`:

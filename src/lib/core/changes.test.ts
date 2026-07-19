@@ -59,19 +59,32 @@ describe('onChanges', () => {
     detect.synth(chart, 'ns');
     const manifest = chart.toJson()[0] as AnyObj;
 
-    expect(manifest.spec.params.map((p: AnyObj) => p.name)).toContain('diff-base');
+    // No diff-base param — the base is a trunk branch baked into the script.
+    expect(manifest.spec.params).toBeUndefined();
     expect(manifest.spec.results.map((r: AnyObj) => r.name)).toContain('changed');
     const script: string = manifest.spec.steps[0].script;
     expect(script).toContain(":(glob)src/**");
     expect(script).toContain(":(glob)package.json");
-    expect(script).toContain('$(params.diff-base)');
+    // trunk default + three-dot merge-base diff
+    expect(script).toContain('origin "main"');
+    expect(script).toContain('FETCH_HEAD...HEAD');
     // the git diff must not be wrapped in shell command substitution — that `$(...)`
     // would collide with Tekton interpolation; a temp file is used instead.
     expect(script).not.toContain('$(git');
     expect(script).toContain('/tmp/tektonic-changed.txt');
   });
 
-  it('detection task and its param surface in a pipeline (inference)', () => {
+  it('supports a custom trunk base branch', () => {
+    const cond = onChanges({ paths: ['docs/**'], base: 'develop' });
+    const detect = cond.sources()[0] as Task;
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    detect.synth(chart, 'ns');
+    const script: string = (chart.toJson()[0] as AnyObj).spec.steps[0].script;
+    expect(script).toContain('origin "develop"');
+  });
+
+  it('detection task surfaces in a pipeline with no extra pipeline params', () => {
     const deploy = new Task({
       name: 'deploy',
       when: onChanges(['src/**']),
@@ -79,6 +92,7 @@ describe('onChanges', () => {
     });
     const pipeline = new Pipeline({ name: 'ci', tasks: [deploy] });
     expect(pipeline.allTasks.map(t => t.name)).toContain('detect-changes');
-    expect(pipeline.inferParams().map((p: AnyObj) => p.name)).toContain('diff-base');
+    // no diff-base (or any) param is introduced by change detection
+    expect(pipeline.inferParams().map((p: AnyObj) => p.name)).not.toContain('diff-base');
   });
 });

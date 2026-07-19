@@ -13,7 +13,7 @@ import {
     Param,
     Result,
     GitPipeline,
-    TektonProject,
+    TektonicProject,
     TRIGGER_EVENTS,
     onBranch,
     onBranchMatching,
@@ -69,11 +69,11 @@ const deploy = new Task({
     steps: [{ name: "deploy", image: nodeImage, script: sh`./deploy.sh ${service}` }],
 });
 
-new TektonProject({
+new TektonicProject({
     name: "monorepo",
     namespace: "tekton-ci",
     outdir: ".tekton-rules-example",
-    webhookSecretRef: { secretName: "github-webhook-secret", secretKey: "secret" },
+    repository: { url: "https://github.com/pfenerty/monorepo" },
     pipelines: [
         new GitPipeline({
             name: "ci",
