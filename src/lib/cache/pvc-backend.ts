@@ -161,10 +161,14 @@ let t0 = (date now)
 # timeout) must never leave a truncated archive at the real hash-keyed path, since the
 # skip-if-exists guard above means a corrupt archive there would never self-heal.
 let tmp = $"($archive).tmp.(random uuid)"
-^tar cf - ...$paths | ^zstd -${compressionLevel} ${flag}${forceSave ? " -f" : ""} -o $tmp
-if $env.LAST_EXIT_CODE != 0 {
+# nushell aborts the enclosing block as soon as any external command in the pipe
+# reports a non-zero exit (e.g. tar failing to read one of $paths), so cleanup must
+# live in a catch — code placed after the pipe but outside try/catch never runs.
+try {
+  ^tar cf - ...$paths | ^zstd -${compressionLevel} ${flag}${forceSave ? " -f" : ""} -o $tmp
+} catch { |e|
   rm -f $tmp
-  log $"${label}: compress failed \(exit ($env.LAST_EXIT_CODE)\), discarding partial archive"
+  log $"${label}: compress failed \(($e.msg)\), discarding partial archive"
   exit 1
 }
 mv -f $tmp $archive
