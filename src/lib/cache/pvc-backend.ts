@@ -157,7 +157,17 @@ if $max > 0 {
 let uncompressed = ($paths | each { |p| try { du $p | get apparent.0 | into int } catch { 0 } } | math sum)
 log $"${label}: compressing (($uncompressed / 1_000_000) | math round --precision 1)MB uncompressed ..."
 let t0 = (date now)
-^tar cf - ...$paths | ^zstd -${compressionLevel} ${flag}${forceSave ? " -f" : ""} -o $archive
+# Write to a temp path and rename into place: a step killed mid-write (OOM, eviction,
+# timeout) must never leave a truncated archive at the real hash-keyed path, since the
+# skip-if-exists guard above means a corrupt archive there would never self-heal.
+let tmp = $"($archive).tmp.(random uuid)"
+^tar cf - ...$paths | ^zstd -${compressionLevel} ${flag}${forceSave ? " -f" : ""} -o $tmp
+if $env.LAST_EXIT_CODE != 0 {
+  rm -f $tmp
+  log $"${label}: compress failed \(exit ($env.LAST_EXIT_CODE)\), discarding partial archive"
+  exit 1
+}
+mv -f $tmp $archive
 let elapsed = (((date now) - $t0) | into int) / 1_000_000_000
 let compressed = (ls $archive | get size.0)
 let ratio = ($uncompressed / ($compressed | into int) | math round --precision 1)
@@ -166,14 +176,18 @@ log $"${label}: saved ($compressed) ratio=($ratio)x in ($elapsed)s"`,
             );
         }
         // Uncompressed PVC save — portable POSIX sh, no nushell required.
-        const copyPaths = c.paths.map((p) => `  cp -r "./${p}" "$CACHE_DIR/${p}"`).join("\n");
+        // Build into a temp dir and rename into place so a step killed mid-copy never
+        // leaves a partial $CACHE_DIR behind (the restore side only checks `-d
+        // "$CACHE_DIR"`, so a half-written dir would be treated as a valid hit).
+        const copyPaths = c.paths.map((p) => `  cp -r "./${p}" "$TMP_DIR/${p}"`).join("\n");
         const saveCondition = forceSave
-            ? `log "${label}: saving cache ($HASH)"\n  mkdir -p "$CACHE_DIR"\n${copyPaths}`
-            : `if [ ! -d "$CACHE_DIR" ]; then\n  log "${label}: saving cache ($HASH)"\n  mkdir -p "$CACHE_DIR"\n${copyPaths}\nfi`;
+            ? `log "${label}: saving cache ($HASH)"\n  mkdir -p "$TMP_DIR"\n${copyPaths}\n  rm -rf "$CACHE_DIR"\n  mv "$TMP_DIR" "$CACHE_DIR"`
+            : `if [ ! -d "$CACHE_DIR" ]; then\n  log "${label}: saving cache ($HASH)"\n  mkdir -p "$TMP_DIR"\n${copyPaths}\n  if [ -d "$CACHE_DIR" ]; then\n    rm -rf "$TMP_DIR"\n  else\n    mv "$TMP_DIR" "$CACHE_DIR"\n  fi\nfi`;
         return cacheScript(
             `HASH=$(cat ${hashFile} 2>/dev/null || echo "")
 [ -z "$HASH" ] && exit 0
 CACHE_DIR="${wsPath}/$HASH"
+TMP_DIR="${wsPath}/.tmp-$HASH-$$"
 ${saveCondition}`,
             PORTABLE_CACHE_LANGUAGE,
         );
