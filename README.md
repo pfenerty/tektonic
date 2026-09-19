@@ -122,7 +122,7 @@ See [docs/cli.md](docs/cli.md).
 
 | Dependency | Version |
 |-----------|---------|
-| Node.js | >= 18 |
+| Node.js | >= 18, or >= 22.18 to run a TypeScript entrypoint (`node` strips the types; no loader needed) |
 | cdk8s | >= 2.0 |
 | constructs | >= 10.0 |
 | Tekton Pipelines | >= v0.59 |

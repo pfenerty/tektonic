@@ -20,7 +20,7 @@ import {
     onChanges,
     or,
     sh,
-} from "../src";
+} from "../dist/index.js";
 
 const nodeImage = "node:22-alpine";
 

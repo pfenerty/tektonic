@@ -4,7 +4,7 @@ import {
     GitPipeline,
     TektonicProject,
     TRIGGER_EVENTS,
-} from "../src";
+} from "../dist/index.js";
 
 // ---- Variables ──────────────────────────────────────────────────────────────
 const golangVersion = "1.23.0";

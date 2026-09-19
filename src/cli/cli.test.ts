@@ -108,6 +108,17 @@ describe('entry resolution', () => {
     expect(args).toEqual([path.join(tmp, 'x.js')]);
   });
 
+  // TypeScript gets no loader and no --require: node strips the types itself. A loader
+  // installed alongside the project must not change the command that runs.
+  it('runs TypeScript entrypoints on bare node too', () => {
+    const { command, args } = runnerFor(path.join(tmp, 'x.ts'), tmp);
+    expect(command).toBe(process.execPath);
+    expect(args).toEqual([
+      '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON',
+      path.join(tmp, 'x.ts'),
+    ]);
+  });
+
   it('honours an explicit runner from package.json', () => {
     write('package.json', JSON.stringify({ tektonic: { runner: 'npx tsx' } }));
     const { command, args } = runnerFor(path.join(tmp, 'x.ts'), tmp);

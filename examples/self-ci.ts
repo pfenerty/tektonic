@@ -9,7 +9,7 @@ import {
     gcs,
     sh,
     nu,
-} from "../src";
+} from "../dist/index.js";
 
 // ─── Images ──────────────────────────────────────────────────────────────────
 const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:22";

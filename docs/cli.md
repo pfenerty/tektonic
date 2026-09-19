@@ -23,9 +23,10 @@ It is resolved in this order:
 3. conventional paths: `tektonic.ts`, `tektonic.config.ts`, `.tektonic/pipeline.ts`,
    `.tektonic/main.ts`, `.tektonic/index.ts`, and their `.js` equivalents
 
-TypeScript entrypoints run through `ts-node/register` when it is installed, and otherwise on
-plain `node` (which strips types itself on Node 22.18+). Override with
-`"tektonic": { "runner": "npx tsx" }`.
+Entrypoints run on plain `node`, which strips the types from a `.ts` file itself — no loader
+is installed, probed for or required. That needs Node 22.18 or newer, and an entrypoint written
+in erasable syntax: `enum`, parameter properties and `namespace` cannot be stripped. For either
+case, name a runner with `"tektonic": { "runner": "npx tsx" }` and it is used verbatim.
 
 ## `check` — drift detection
 
