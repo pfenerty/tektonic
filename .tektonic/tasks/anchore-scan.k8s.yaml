@@ -32,7 +32,7 @@ spec:
     - env:
         - name: CLOUDSDK_CONFIG
           value: /tekton/home/.config/gcloud
-      image: ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0
+      image: ghcr.io/pfenerty/apko-cicd/gcloud:581.0.0
       name: restore-grype-db-cache
       script: |-
         #!/usr/bin/env nu
@@ -205,7 +205,7 @@ spec:
     - env:
         - name: CLOUDSDK_CONFIG
           value: /tekton/home/.config/gcloud
-      image: ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0
+      image: ghcr.io/pfenerty/apko-cicd/gcloud:581.0.0
       name: save-grype-db-cache
       onError: continue
       script: |-

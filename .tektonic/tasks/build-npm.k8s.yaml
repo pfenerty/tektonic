@@ -27,7 +27,7 @@ spec:
     - env:
         - name: CLOUDSDK_CONFIG
           value: /tekton/home/.config/gcloud
-      image: ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0
+      image: ghcr.io/pfenerty/apko-cicd/gcloud:581.0.0
       name: restore-npm-cache
       script: |-
         #!/usr/bin/env nu
@@ -115,7 +115,7 @@ spec:
     - env:
         - name: CLOUDSDK_CONFIG
           value: /tekton/home/.config/gcloud
-      image: ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0
+      image: ghcr.io/pfenerty/apko-cicd/gcloud:581.0.0
       name: save-npm-cache
       onError: continue
       script: |-
