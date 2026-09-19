@@ -46,6 +46,27 @@ const npmTest = new Task({
     ],
     steps: [
         {
+            // The cache is keyed on package-lock.json alone, which is correct — the lock is
+            // what `npm ci` installs from. But that makes a package.json-only change (a
+            // dependency bump whose lock refresh failed, say) a cache hit: node_modules is
+            // restored, the `npm ci` below is skipped, and the tests silently run against the
+            // old dependency tree. This dry run costs a few seconds, never writes anything and
+            // runs whether or not the cache hit, so drift fails the build instead of hiding.
+            name: "check-lockfile",
+            image: nodeImage,
+            workingDir: "$(workspaces.workspace.path)",
+            script: sh`
+                if npm ci --dry-run --ignore-scripts --no-audit --no-fund >/dev/null 2>&1; then
+                  echo "check-lockfile: package-lock.json is in sync with package.json"
+                  exit 0
+                fi
+                echo "check-lockfile: package-lock.json does not match package.json" >&2
+                echo "check-lockfile: run 'npm install' and commit the updated lock file" >&2
+                echo "check-lockfile: npm reported:" >&2
+                npm ci --dry-run --ignore-scripts --no-audit --no-fund >&2
+            `,
+        },
+        {
             name: "test",
             image: nodeImage,
             workingDir: "$(workspaces.workspace.path)",
