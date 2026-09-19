@@ -55,9 +55,11 @@ export function resolveEntry(explicit: string | undefined, cwd: string): string 
 /**
  * The command that runs `entry`.
  *
- * JavaScript runs on bare `node`. TypeScript prefers `ts-node/register` when the consumer has
- * it installed (the common setup, and the only one that handles non-erasable syntax), and
- * otherwise falls back to plain `node`, which strips types itself on Node 22.18+.
+ * Both JavaScript and TypeScript run on bare `node`, which strips types itself from Node
+ * 22.18 on. No loader is probed for or depended on: an entrypoint written in non-erasable
+ * syntax (`enum`, parameter properties, `namespace`) is the one case node cannot run, and it
+ * is served by `"tektonic": { "runner": "npx tsx" }` in package.json rather than by this
+ * library carrying a transpiler of its own.
  */
 export function runnerFor(entry: string, cwd: string): { command: string; args: string[] } {
   const configured = packageJsonConfig(cwd).runner;
@@ -65,11 +67,11 @@ export function runnerFor(entry: string, cwd: string): { command: string; args: 
     const [command, ...args] = configured.split(' ').filter(Boolean);
     return { command, args: [...args, entry] };
   }
-  if (!entry.endsWith('.ts')) return { command: process.execPath, args: [entry] };
-  try {
-    const register = require.resolve('ts-node/register', { paths: [cwd, __dirname] });
-    return { command: process.execPath, args: ['--require', register, entry] };
-  } catch {
-    return { command: process.execPath, args: [entry] };
-  }
+  // A `.ts` entrypoint in a package without "type": "module" parses as ESM by syntax
+  // detection, and node warns about the reparse on every synthesis. The reparse is the
+  // intended path here, so the warning is noise in a CLI's output rather than a signal.
+  const args = entry.endsWith('.ts')
+    ? ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', entry]
+    : [entry];
+  return { command: process.execPath, args };
 }

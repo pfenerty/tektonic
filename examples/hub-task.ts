@@ -8,7 +8,7 @@
  * Synthesizes to: .tektonic-hub-example/
  *
  * Run with:
- *   flox activate -- npx ts-node examples/hub-task.ts
+ *   flox activate -- npm run build && node examples/hub-task.ts
  */
 
 import {
@@ -19,7 +19,7 @@ import {
     Pipeline,
     TektonicProject,
     TRIGGER_EVENTS,
-} from "../src";
+} from "../dist/index.js";
 
 // ── Shared workspace ─────────────────────────────────────────────────────────
 const output = new Workspace({ name: "output" });

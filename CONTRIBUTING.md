@@ -14,9 +14,10 @@ npm install
 ```bash
 npm run build         # compile TypeScript → dist/
 npm test              # run test suite (vitest)
-npm run synth         # synthesize examples → synth-output/
+npm run synth         # synthesize this repo's own CI → .tektonic/
+npm run check         # fail if the committed .tektonic/ output is stale
+npm run graph         # print the self-CI task DAG (FORMAT=mermaid for a flowchart)
 npm run lint:scripts  # lint extracted .sh/.bash/.nu/.py files
-npm run docs:api      # generate API docs with TypeDoc
 ```
 
 ## Project structure

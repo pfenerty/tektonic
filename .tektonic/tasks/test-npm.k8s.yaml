@@ -93,6 +93,31 @@ spec:
         }
       workingDir: $(workspaces.workspace.path)
     - image: ghcr.io/pfenerty/apko-cicd/nodejs:22
+      name: check-lockfile
+      onError: continue
+      script: |-
+        #!/bin/sh
+        log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+        [ -e /tekton/home/.exit-code ] || printf '%s' 0 > /tekton/home/.exit-code
+        chmod 0666 /tekton/home/.exit-code 2>/dev/null || true
+        (
+        if npm ci --dry-run --ignore-scripts --no-audit --no-fund >/dev/null 2>&1; then
+          echo "check-lockfile: package-lock.json is in sync with package.json"
+          exit 0
+        fi
+        echo "check-lockfile: package-lock.json does not match package.json" >&2
+        echo "check-lockfile: run 'npm install' and commit the updated lock file" >&2
+        echo "check-lockfile: npm reported:" >&2
+        npm ci --dry-run --ignore-scripts --no-audit --no-fund >&2
+        )
+        __tek_rc=$?
+        if [ "$__tek_rc" -ne 0 ]; then log "error [test-npm/check-lockfile]: exited with status $__tek_rc"; fi
+        __tek_prev=$(cat /tekton/home/.exit-code 2>/dev/null || echo 0)
+        if [ "$__tek_rc" -gt "$__tek_prev" ]; then __tek_prev="$__tek_rc"; fi
+        printf '%s' "$__tek_prev" > /tekton/home/.exit-code
+        exit "$__tek_rc"
+      workingDir: $(workspaces.workspace.path)
+    - image: ghcr.io/pfenerty/apko-cicd/nodejs:22
       name: test
       onError: continue
       script: |-
@@ -182,7 +207,7 @@ spec:
         def log [msg: string] { print $"[(date now | format date '%H:%M:%S')] ($msg)" }
         let contract_code = (try { open --raw /tekton/home/.exit-code | str trim | into int } catch { 1 })
         # A step that never ran has no file; 0 keeps it out of the max.
-        let step_codes = (["/tekton/steps/step-test/exitCode"] | each { |p| try { open --raw $p | str trim | into int } catch { 0 } })
+        let step_codes = (["/tekton/steps/step-check-lockfile/exitCode" "/tekton/steps/step-test/exitCode"] | each { |p| try { open --raw $p | str trim | into int } catch { 0 } })
         let exit_code = ([$contract_code ...$step_codes] | math max)
         let state = if $exit_code == 0 { "success" } else { "failure" }
         let desc = if $exit_code == 0 { "Passed" } else { "Failed" }

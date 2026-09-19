@@ -24,8 +24,8 @@ you might need for advanced usage (`App`, `Chart`, `ChartProps`, `Construct`,
 Create a pipeline file (e.g. `ci/pipeline.ts`) and run it:
 
 ```bash
-npx ts-node ci/pipeline.ts
-# or add to package.json: "synth": "ts-node ci/pipeline.ts"
+npx tektonic synth ci/pipeline.ts
+# or add to package.json: "synth": "tektonic synth ci/pipeline.ts"
 ```
 
 ## Minimal Example

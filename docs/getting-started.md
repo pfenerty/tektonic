@@ -4,14 +4,14 @@ This guide walks through building a complete Tekton CI pipeline using `@pfenerty
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 18 — or >= 22.18 if your pipeline file is TypeScript, which `node` runs by stripping the types itself
 - A Kubernetes cluster with [Tekton Pipelines](https://tekton.dev/docs/installation/pipelines/) >= v0.59 and [Tekton Triggers](https://tekton.dev/docs/installation/triggers/) >= v0.26 installed
 
 ## 1. Install dependencies
 
 ```bash
 npm install @pfenerty/tektonic cdk8s constructs
-npm install -D typescript ts-node @types/node
+npm install -D typescript @types/node
 ```
 
 ## 2. Define params and workspaces
@@ -109,7 +109,7 @@ PAC reads these files from the pushed commit — there's nothing to `kubectl app
 Commit `.tekton/` to your repository:
 
 ```bash
-npx ts-node pipeline.ts   # regenerate .tekton/
+npx tektonic synth pipeline.ts   # regenerate .tekton/
 git add .tekton && git commit -m "ci: update pipelines" && git push
 ```
 
