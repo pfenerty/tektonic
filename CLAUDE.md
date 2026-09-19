@@ -22,6 +22,7 @@ The environment is defined in `.flox/env/manifest.toml` and currently provides:
 | Run tests | `flox activate -- npm test` |
 | Build (compile TS) | `flox activate -- npm run build` |
 | Synthesize manifests | `flox activate -- npm run synth` |
+| Check committed manifests | `flox activate -- npm run check` |
 | Install dependencies | `flox activate -- npm install` |
 | Watch mode tests | `flox activate -- npm run test:watch` |
 | List issues | `flox activate -- bd list` |

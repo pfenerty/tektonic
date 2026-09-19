@@ -1,6 +1,5 @@
 node_modules/
 dist/
-synth-output/
 /lib/
 *.js.map
 docs/generated/

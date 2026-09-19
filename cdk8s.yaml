@@ -1,3 +1,0 @@
-language: typescript
-app: node examples/main.ts
-output: synth-output
