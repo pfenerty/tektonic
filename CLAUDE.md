@@ -28,6 +28,28 @@ The environment is defined in `.flox/env/manifest.toml` and currently provides:
 | List issues | `flox activate -- bd list` |
 | Update codebase snapshot | `flox activate -- repomix` |
 
+## Cloud Sessions (Claude Code on the web)
+
+A cold container has no Flox, so `bd`, `node` and the Dolt database are all absent.
+`.claude/hooks/session-start.sh` handles it on SessionStart: installs `bd` via
+`go install` if missing, puts it on PATH for the session, rebuilds the Dolt database
+from the committed `.beads/issues.jsonl`, runs `npm install`, then `bd prime`.
+
+Two things worth knowing:
+
+- **`.beads/issues.jsonl` is the interchange format.** The Dolt database itself is
+  gitignored, so a cloud session only sees issues that have been exported and
+  committed. Run `bd export -o .beads/issues.jsonl` and commit it alongside your work,
+  the way ocidex does. `bd import` is upsert, so merging a branch's JSONL never
+  clobbers issues it does not mention.
+- **Never run a bare `bd init` in a checkout that already has beads.** It rewrites
+  `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` and the git hooks, and commits the
+  result. The hook uses `--skip-agents --skip-hooks --from-jsonl` and reverts the
+  commit bd makes anyway.
+
+Outside a cloud container the hook is close to a no-op: every install step is guarded
+on the tool being missing, and the rebuild is guarded on the database being absent.
+
 ## Issue Tracking
 
 Beads (`bd`) is configured at `.beads/`. Use it for ALL task tracking — no markdown TODOs.
