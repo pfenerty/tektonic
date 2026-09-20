@@ -17,6 +17,7 @@ import type { StatusReporter } from "./status-reporter";
 import type { CacheBackend, BackendCtx } from "./cache-backend";
 import { renderScript, EXIT_CODE_PATH } from "../script";
 import type { ScriptInput, LanguageName, ScriptCtx } from "../script";
+import { Action, ACTION_OUTPUT_DIR, ACTION_VOLUME_NAME } from "./action";
 
 /**
  * Kubernetes image pull policy.
@@ -270,6 +271,15 @@ export interface TaskVolumeSpec {
     [key: string]: unknown;
 }
 
+/** Keeps the first occurrence of each name, so what a task states itself wins over what an action contributes. */
+function mergeByName<T extends { name: string }>(items: T[]): T[] {
+    const seen = new Map<string, T>();
+    for (const item of items) {
+        if (!seen.has(item.name)) seen.set(item.name, item);
+    }
+    return [...seen.values()];
+}
+
 /** Minimum contract shared by all task-like nodes in a pipeline. */
 export interface TaskLike {
     readonly name: string;
@@ -280,6 +290,12 @@ export interface TaskLike {
     _toPipelineTaskSpec(runAfterNames: string[], namePrefix?: string): Record<string, unknown>;
 }
 
+/**
+ * Anything accepted in a task's `steps`: a hand-written step, or an {@link Action} that
+ * expands to one or more steps inside the same pod.
+ */
+export type TaskStepInput = TaskStepSpec | Action<string>;
+
 /** Options for constructing a {@link TaskDef}. */
 export interface TaskOptions {
     /** Task name used in Tekton manifests and pipeline task references. */
@@ -288,8 +304,12 @@ export interface TaskOptions {
     params?: Param[];
     /** Workspaces required by this task. */
     workspaces?: Workspace[];
-    /** Ordered list of steps the task executes. */
-    steps: TaskStepSpec[];
+    /**
+     * Ordered list of steps the task executes. An entry may be an {@link Action} — a reusable,
+     * typed unit of work that expands to one or more steps in this pod and merges its params,
+     * workspaces, caches, volumes and results upward into this task.
+     */
+    steps: TaskStepInput[];
     /** Tasks that must complete before this task runs (dependency graph edges). */
     needs?: TaskLike[];
     /** Override or extend the default step template (merged with security context defaults). */
@@ -377,7 +397,12 @@ export class TaskDef implements TaskLike {
     readonly name: string;
     readonly params: Param[];
     readonly workspaces: Workspace[];
+    /** Steps this task executes, with every composed {@link Action} already expanded. */
     readonly steps: TaskStepSpec[];
+    /** Actions composed into this task, in the order they appear in `steps`. */
+    readonly actions: Action<string>[];
+    /** Step names contributed by an action, mapped to the contributing instance name. */
+    private readonly _actionStepOwners = new Map<string, string>();
     /** Tasks that must complete before this task runs. */
     readonly needs: TaskLike[];
     readonly stepTemplate?: Record<string, unknown>;
@@ -414,22 +439,71 @@ export class TaskDef implements TaskLike {
 
     constructor(opts: TaskOptions) {
         this.name = opts.name;
-        // Auto-merge statusReporter.requiredParams into task params (user params take precedence)
+        // Actions are pod-internal: they expand to ordinary steps here, then contribute what
+        // they need upward — the same direction StatusReporter.requiredParams flow, and with
+        // the same precedence (what the task states itself wins).
+        this.actions = opts.steps.filter((s): s is Action<string> => s instanceof Action);
+        const actionNames = new Set<string>();
+        for (const a of this.actions) {
+            if (actionNames.has(a.name)) {
+                throw new Error(
+                    `Task '${this.name}': two actions are composed as '${a.name}' — pass ` +
+                        `{ name } to one of them, since step names derive from it`,
+                );
+            }
+            actionNames.add(a.name);
+        }
+        this.steps = opts.steps.flatMap((s) => (s instanceof Action ? s.steps : [s]));
+        for (const a of this.actions) {
+            for (const s of a.steps) this._actionStepOwners.set(s.name, a.name);
+        }
+        const stepNames = new Set<string>();
+        for (const s of this.steps) {
+            if (stepNames.has(s.name)) {
+                throw new Error(
+                    `Task '${this.name}': duplicate step name '${s.name}' — Tekton requires step ` +
+                        `names to be unique within a task`,
+                );
+            }
+            stepNames.add(s.name);
+        }
+        // Auto-merge action and statusReporter.requiredParams into task params (user params take precedence)
         const base = opts.params ?? [];
+        const actionParams = this.actions.flatMap((a) => a.params);
         const reporterParams = opts.statusReporter?.requiredParams ?? [];
         const seen = new Map<string, Param>();
-        for (const p of [...base, ...reporterParams]) {
+        for (const p of [...base, ...actionParams, ...reporterParams]) {
             if (!seen.has(p.name)) seen.set(p.name, p);
         }
         this.params = [...seen.values()];
-        this.workspaces = [...(opts.workspaces ?? [])];
-        this.steps = opts.steps;
+        this.workspaces = mergeByName([
+            ...(opts.workspaces ?? []),
+            ...this.actions.flatMap((a) => a.workspaces),
+        ]);
         // Copy so fan-out edge injection never mutates a caller-supplied array.
         this.needs = [...(opts.needs ?? [])];
         this.stepTemplate = opts.stepTemplate;
         this.statusContext = opts.statusContext ?? opts.name;
         this.statusReporter = opts.statusReporter;
-        this.caches = opts.caches ?? [];
+        // In a reporting task the framework owns the exit-code contract: every user step runs
+        // with onError:'continue' so the appended reporter step reads the captured code. A step
+        // that sets 'stopAndFail' takes the pod down before the reporter runs, leaving the
+        // context on "pending" until the reconciler settles it — same reason a raw '#!' body is
+        // rejected here, and not something a composed library action gets to decide silently.
+        if (this.statusReporter && this.statusContext) {
+            for (const s of this.steps) {
+                const owner = this._actionStepOwners.get(s.name);
+                if (owner && s.onError === "stopAndFail") {
+                    throw new Error(
+                        `Task '${this.name}': action '${owner}' sets onError:'stopAndFail' on step ` +
+                            `'${s.name}', which ends the pod before this task's status reporter runs. ` +
+                            `An action cannot opt out of the exit-code contract — let the step fail ` +
+                            `normally, or compose it into a task that reports no status.`,
+                    );
+                }
+            }
+        }
+        this.caches = mergeByName([...(opts.caches ?? []), ...this.actions.flatMap((a) => a.caches)]);
         // Auto-register workspace for PVC-backed caches. Non-PVC backends manage their own storage.
         for (const c of this.caches) {
             const backend = c.backend ?? new PvcBackend();
@@ -438,10 +512,20 @@ export class TaskDef implements TaskLike {
                 (this.workspaces as Workspace[]).push(c.workspace);
             }
         }
-        this.results = opts.results ?? [];
+        // A promotion action (`output.toResult(r)`) contributes the result it writes, so the
+        // same Result passed in both places is bound once, not rejected as double-bound.
+        this.results = mergeByName([...(opts.results ?? []), ...this.actions.flatMap((a) => a.results)]);
         for (const r of this.results) r._bindToTask(this.name, this);
         this.sidecars = opts.sidecars ?? [];
-        this.volumes = opts.volumes ?? [];
+        this.volumes = mergeByName([
+            ...(opts.volumes ?? []),
+            ...this.actions.flatMap((a) => a.volumes),
+            // Steps are separate containers: an action's declared outputs only reach the next
+            // step over a pod-scoped volume, mounted on every step via the stepTemplate.
+            ...(this.actions.some((a) => a.usesOutputVolume)
+                ? [{ name: ACTION_VOLUME_NAME, emptyDir: {} } as TaskVolumeSpec]
+                : []),
+        ]);
         this.defaultLanguage = opts.defaultLanguage;
         this.annotations = opts.annotations;
         this.when = opts.when;
@@ -573,6 +657,10 @@ export class TaskDef implements TaskLike {
             return out;
         };
 
+        const actionVolumeMounts = this.actions.some((a) => a.usesOutputVolume)
+            ? [{ name: ACTION_VOLUME_NAME, mountPath: ACTION_OUTPUT_DIR }]
+            : [];
+
         const steps = [
             ...restoreSteps.map((s) => renderStep(s, libCtx, false)),
             ...this.steps.map((s) => renderStep(s, userCtx, reporting)),
@@ -593,6 +681,14 @@ export class TaskDef implements TaskLike {
                     computeResources: DEFAULT_STEP_RESOURCES,
                     ...(defaultImagePullPolicy && { imagePullPolicy: defaultImagePullPolicy }),
                     ...(this.stepTemplate ?? {}),
+                    // Mounted on every step rather than on the producing one, so a later
+                    // hand-written step can read `${action.outputs.x}` with nothing to declare.
+                    ...(actionVolumeMounts.length > 0 && {
+                        volumeMounts: [
+                            ...actionVolumeMounts,
+                            ...((this.stepTemplate?.volumeMounts as TaskStepSpec["volumeMounts"]) ?? []),
+                        ],
+                    }),
                 },
                 ...(this.params.length > 0 && {
                     params: this.params.map((p) => p.toSpec()),

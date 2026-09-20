@@ -20,6 +20,10 @@ files underneath.
   mistake is a compile error, not a failed PipelineRun.
 - **Declarative dependency graph** — declare `task.needs`; the library discovers transitive
   dependencies, validates the graph, rejects cycles, and topologically orders execution.
+- **Jobs *and* actions** — a `Task` is a job (one pod, one node in the graph); an `Action` is
+  reusable, versioned work *inside* one, with typed inputs and typed output path handles instead
+  of steps that agree on a filename by convention. See
+  [docs/job-libraries.md](docs/job-libraries.md#the-action-layer).
 - **Scripts as first-class, testable files** — write step bodies in real `.sh`/`.bash`/`.nu`/
   `.py` files with IDE highlighting and linting, and unit-test them by running the real
   interpreter. See [docs/scripting.md](docs/scripting.md).
@@ -108,7 +112,7 @@ See [docs/cli.md](docs/cli.md).
 - [Getting started](docs/getting-started.md) — build a complete pipeline end to end
 - [Agent guide](docs/agent-guide.md) — full API reference with examples
 - [CLI](docs/cli.md) — `tektonic synth`, `check`, `graph`, `lint`
-- [Building a job library](docs/job-libraries.md) — task factories, presets, and the stable surface to build on
+- [Building a job library](docs/job-libraries.md) — jobs and actions, task factories, presets, and the stable surface to build on
 - [Testing pipelines](docs/testing.md) — assert graph shape and gating in memory, no cluster
 - [Scripting](docs/scripting.md) — language tags, `scriptFromFile`, the exit-code contract, testing
 - [Caching](docs/caching.md) — PVC & GCS caches, compression, save strategies

@@ -30,6 +30,7 @@ src/
     ├── core/                 # primitives + orchestrators + extension interfaces
     │   ├── param.ts  workspace.ts  result.ts        # named handles, stringify to $(...) exprs
     │   ├── task.ts                                   # TaskDef: the synthesizable unit of work
+    │   ├── action.ts                                 # Action: reusable, typed work *inside* a pod
     │   ├── pipeline.ts  git-pipeline.ts             # graph discovery, validation, topo-sort
     │   ├── pipeline-task.ts                          # gated() per-edge overrides (when/retry/timeout)
     │   ├── condition.ts  changes.ts                  # typed rules DSL + onChanges detection
@@ -61,9 +62,10 @@ Nothing is emitted until a synthesizer runs. The pipeline:
    `$(workspaces.x.path)`, `$(tasks.t.results.r)`). This is why a tagged-template script can
    interpolate them directly.
 2. **Construct tasks.** `TaskDef` (aliased as `Task`) stores steps, params, workspaces, caches,
-   results, and an optional status reporter. The constructor does light wiring: it merges a
-   reporter's `requiredParams` into the task's params, auto-registers PVC cache workspaces, and
-   binds each `Result` to the task name.
+   results, and an optional status reporter. The constructor does light wiring: it expands any
+   composed `Action` into steps and merges what it contributes upward, merges a reporter's
+   `requiredParams` into the task's params, auto-registers PVC cache workspaces, and binds each
+   `Result` to the task name.
 3. **Construct a pipeline.** `Pipeline` walks `task.needs` transitively (`discoverAllTasks`),
    detects status-reporting tasks and prepends a generated "set pending" task, and collects
    cache `finally` tasks. `GitPipeline` additionally creates the git-clone task and threads the
@@ -76,6 +78,41 @@ Nothing is emitted until a synthesizer runs. The pipeline:
    built once.
 5. **Emit.** Each `SynthTarget` is handed that model and writes files for its delivery
    mechanism. The default is `PacTarget`; cdk8s writes the YAML.
+
+### Jobs and actions
+
+The two units of reuse are deliberately different sizes, and the split follows what a pod costs:
+
+- A **job** is a `TaskDef`: one Tekton Task, one pod, one node in the DAG, its own status
+  context, `needs`, `when`, retries and timeout. A job library is a function from options to a
+  `Task` ([job-libraries.md](job-libraries.md)).
+- An **action** (`src/lib/core/action.ts`) is reusable work *inside* one pod: typed inputs,
+  typed outputs, a version, rendering to one or more steps of the composing task. It is never a
+  graph node and has no status of its own.
+
+`defineAction` returns a factory; calling it yields an `Action` whose steps are already
+name-prefixed (`<instance>-<step>`) and image-resolved, and whose declared outputs are
+`ActionOutput` handles — the same `toString()` trick `Param`/`Workspace`/`Result` use, over an
+in-pod path under `/tektonic/actions`. Because Tekton steps are separate containers, `TaskDef`
+injects a pod-scoped `emptyDir` volume and mounts it via the `stepTemplate` whenever a composed
+action declares outputs; that mount is what makes one step's output readable by the next.
+
+Everything an action needs travels upward into the composing task — params, workspaces, caches,
+volumes, results — with the task's own entries winning by name, mirroring how a
+`StatusReporter`'s `requiredParams` merge. Everything cross-cutting flows downward: by synthesis
+time an action's steps are ordinary steps, so the step template, pull policy, `taskPreset` step
+defaults and the exit-code contract apply to them unchanged. An action cannot opt out of that
+contract (`onError: 'stopAndFail'` in a reporting task is rejected at construction), which is
+the same rule a raw `#!` body lives under.
+
+Crossing the *pod* boundary is explicit: `output.toResult(result)` and
+`output.toWorkspace(ws, dest?)` each return an action that copies the file, so the promotion is
+a step the author chose rather than a silent framework behaviour. `toResult` enforces Tekton's
+4KB result cap in the step instead of letting it truncate.
+
+`HubTaskRef` is the other "reusable unit from elsewhere", and it is job-sized: a remote catalog
+Task, one more pod in the graph. The names are kept apart on purpose — an action is pod-internal
+and never appears in the pipeline spec.
 
 ### Dependency discovery, validation, ordering
 
