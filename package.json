@@ -1,56 +1,29 @@
 {
-  "name": "@pfenerty/tektonic",
-  "version": "2.0.0",
-  "description": "CDK8s constructs for composing Tekton pipelines as code",
+  "name": "tektonic-workspace",
+  "private": true,
+  "description": "Workspace root for @pfenerty/tektonic and its provider packages",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/pfenerty/tektonic.git"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.js"
-    },
-    "./testing": {
-      "types": "./dist/lib/testing/index.d.ts",
-      "import": "./dist/lib/testing/index.js",
-      "require": "./dist/lib/testing/index.js"
-    }
-  },
-  "bin": {
-    "tektonic": "./dist/cli/index.js"
-  },
-  "files": [
-    "dist/**/*.js",
-    "dist/**/*.d.ts",
-    "dist/**/*.d.ts.map",
-    "dist/**/*.js.map",
-    "README.md",
-    "CHANGELOG.md"
+  "workspaces": [
+    "packages/tektonic",
+    "packages/tektonic-cache-gcs",
+    "packages/tektonic-reporter-github"
   ],
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  },
   "scripts": {
-    "build": "tsc",
-    "build:watch": "tsc --watch",
-    "test": "vitest run",
+    "build": "tsc -b",
+    "build:watch": "tsc -b --watch",
+    "clean": "tsc -b --clean",
+    "lint:imports": "node scripts/check-provider-imports.mjs",
+    "test": "npm run lint:imports && npm run build && npm run typecheck && vitest run",
+    "typecheck": "npm run typecheck -w @pfenerty/tektonic-cache-gcs -w @pfenerty/tektonic-reporter-github",
     "test:watch": "vitest",
-    "lint:scripts": "npm run build && node dist/cli/index.js lint",
-    "synth": "npm run build && node dist/cli/index.js synth examples/self-ci.ts",
-    "check": "npm run build && node dist/cli/index.js check examples/self-ci.ts",
-    "graph": "npm run build && node dist/cli/index.js graph examples/self-ci.ts",
-    "prepare": "npm run build"
-  },
-  "peerDependencies": {},
-  "dependencies": {
-    "cdk8s": "^2.68.0",
-    "constructs": "^10.3.0"
+    "lint:scripts": "npm run build && node packages/tektonic/dist/cli/index.js lint",
+    "synth": "npm run build && node packages/tektonic/dist/cli/index.js synth examples/self-ci.ts",
+    "check": "npm run build && node packages/tektonic/dist/cli/index.js check examples/self-ci.ts",
+    "graph": "npm run build && node packages/tektonic/dist/cli/index.js graph examples/self-ci.ts"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

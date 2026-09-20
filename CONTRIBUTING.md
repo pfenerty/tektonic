@@ -11,9 +11,12 @@ npm install
 
 ## Commands
 
+All of these run from the repository root, across every workspace package.
+
 ```bash
-npm run build         # compile TypeScript → dist/
-npm test              # run test suite (vitest)
+npm run build         # tsc -b across the workspace → packages/*/dist/
+npm test              # provider-import check, build, then the test suite (vitest)
+npm run lint:imports  # fail if a provider package reaches into core's internals
 npm run synth         # synthesize this repo's own CI → .tektonic/
 npm run check         # fail if the committed .tektonic/ output is stale
 npm run graph         # print the self-CI task DAG (FORMAT=mermaid for a flowchart)
@@ -23,7 +26,25 @@ npm run lint:scripts  # lint extracted .sh/.bash/.nu/.py files
 ## Project structure
 
 See [docs/architecture.md](docs/architecture.md) for how these pieces fit together and the
-extension points. At a glance:
+extension points.
+
+The repository is an npm workspace of three packages:
+
+```
+packages/
+├── tektonic/                     # @pfenerty/tektonic — the core library
+├── tektonic-cache-gcs/           # @pfenerty/tektonic-cache-gcs — GcsBackend
+└── tektonic-reporter-github/     # @pfenerty/tektonic-reporter-github — GitHubStatusReporter
+```
+
+The two provider packages take core as a **peer** dependency and may import it only through
+its published surface — no deep imports, no relative paths into core. That restriction is the
+point of the split, so it is enforced: `scripts/check-provider-imports.mjs` fails the build
+on a violation, and `npm test` runs it first. When a provider genuinely needs something core
+keeps internal, export it from `packages/tektonic/src/index.ts` and document it as supported
+API — that decision is what this check forces into the open.
+
+At a glance, inside `packages/tektonic` — every bare `src/…` path below is relative to it:
 
 ```
 src/
@@ -39,8 +60,7 @@ src/
     │   ├── hub-task-ref.ts  trigger.ts  trigger-events.ts
     │   └── cache-backend.ts  status-reporter.ts  synth-target.ts   # extension interfaces
     ├── script/                   # ScriptLanguage plugins (sh/bash/nushell/python) + from-file
-    ├── cache/                    # PvcBackend, GcsBackend, shared helpers
-    ├── reporters/                # GitHubStatusReporter
+    ├── cache/                    # PvcBackend + shared helpers published for backend authors
     └── targets/                  # SynthTarget implementations (pac/, tekton/)
 examples/
 ├── main.ts                       # Go pipeline example
@@ -86,8 +106,8 @@ generates it stayed behind — the bumps were real, `npm run check` was red, and
 `npm run synth` would have reverted them.
 
 So the pins themselves are under Renovate now, through a `customManagers` regex in
-`renovate.json` covering `src/lib/cache/gcs-backend.ts`, `src/lib/constants.ts` and
-`examples/self-ci.ts`. Add a file to that list when it grows a versioned image literal; a
+`renovate.json` covering `packages/tektonic/src/lib/constants.ts`,
+`packages/tektonic-cache-gcs/src/gcs-backend.ts` and `examples/self-ci.ts`. Add a file to that list when it grows a versioned image literal; a
 floating tag such as `base:stable` is skipped, since the regex requires a leading digit.
 (`config:recommended` ignores `examples/` by default, which is why `ignorePaths` is spelled
 out in full without it.)
@@ -101,8 +121,14 @@ committed, and its exit code is folded into the GitHub status. **If it fails, ru
 
 ## Releasing
 
-The package is published to **npmjs as `@pfenerty/tektonic`** by the `publish` GitHub Actions
-workflow (`.github/workflows/publish.yml`), triggered by a `vX.Y.Z` tag.
+Three packages are published to npmjs — `@pfenerty/tektonic`,
+`@pfenerty/tektonic-cache-gcs` and `@pfenerty/tektonic-reporter-github` — by the `publish`
+GitHub Actions workflow (`.github/workflows/publish.yml`), triggered by a `vX.Y.Z` tag.
+
+**They version together.** One tag governs all three, the workflow refuses to publish unless
+every `packages/*/package.json` carries that version, and core publishes first so the peer
+range the providers declare is already satisfiable. That keeps the peer range trivial while
+the seams are new; revisit independent versioning once they have held for a release or two.
 
 Publishing uses npm **trusted publishing** (OIDC): the workflow mints a short-lived credential
 from its `id-token: write` permission, so no npm token exists anywhere — not in the repo, not in
@@ -116,10 +142,11 @@ build, SBOM and vulnerability scan — still runs in Tekton on push and pull req
 
 ### Cutting a release
 
-1. Bump `version` in `package.json`, commit, and push to `main`.
+1. Bump `version` in **every** `packages/*/package.json` to the same value, along with the
+   peer range the providers declare on core, then commit and push to `main`.
 2. Tag the commit `vX.Y.Z` and push the tag. The workflow refuses to publish when the tag does
-   not match the package version, re-runs `npm test` and `npm run build`, and is a no-op if that
-   version is already on the registry — so re-running a release is safe.
+   not match every package version, re-runs `npm test` and `npm run build`, and skips any
+   package already on the registry at that version — so re-running a release is safe.
 
 ### One-time setup
 

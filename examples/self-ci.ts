@@ -3,14 +3,15 @@ import {
     GitPipeline,
     TektonicProject,
     TRIGGER_EVENTS,
-    GitHubStatusReporter,
     PAC_PARAMS,
     DEFAULT_BASE_IMAGE,
-    DEFAULT_GCS_CACHE_IMAGE,
-    gcs,
     sh,
     nu,
-} from "../dist/index.js";
+} from "../packages/tektonic/dist/index.js";
+// The GCS backend and the GitHub reporter are separate packages: this file consumes them
+// exactly as any other project does, through their own package roots.
+import { gcs, DEFAULT_GCS_CACHE_IMAGE } from "../packages/tektonic-cache-gcs/dist/index.js";
+import { GitHubStatusReporter } from "../packages/tektonic-reporter-github/dist/index.js";
 
 // ─── Images ──────────────────────────────────────────────────────────────────
 const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:22";

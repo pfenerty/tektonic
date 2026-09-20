@@ -312,6 +312,9 @@ Provider-agnostic interface for reporting pipeline task statuses to an external 
 
 ### `GitHubStatusReporter`
 
+> Ships in **`@pfenerty/tektonic-reporter-github`**, not the core package.
+> `npm install @pfenerty/tektonic-reporter-github`
+
 Reports task statuses to the [GitHub Commit Status API](https://docs.github.com/en/rest/commits/statuses). Zero-config with sensible defaults.
 
 ```typescript
@@ -457,7 +460,7 @@ for. Third-party backends and reporters declare their own needs with
 | `injectedImageRef(...caps)` | `(...ImageCapability[]) => string` | The image an injected step uses when the caller named none, declaring what it needs |
 | `DEFAULT_INJECTED_STEP_IMAGE` | `InjectedStepImageSpec` | The neutral fallback (`sh`, `git`) |
 | `DEFAULT_BASE_IMAGE` | `string` | An image providing every capability; pass it to `injectedStepImage` |
-| `DEFAULT_GCS_CACHE_IMAGE` | `string` | An image providing the GCS set; pass it to `gcs({ bucket, image })` |
+| `DEFAULT_GCS_CACHE_IMAGE` | `string` | *(in `@pfenerty/tektonic-cache-gcs`)* an image providing the GCS set; pass it to `gcs({ bucket, image })` |
 
 ---
 

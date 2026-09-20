@@ -121,10 +121,12 @@ kubectl apply -f .tekton/*-repository.k8s.yaml
 
 ## 7. (Optional) Add GitHub status reporting
 
-Report commit statuses back to GitHub so pull requests show CI results inline. Create a `GitHubStatusReporter` and attach it to any task that should report:
+Report commit statuses back to GitHub so pull requests show CI results inline. The GitHub
+reporter ships as its own package — `npm install @pfenerty/tektonic-reporter-github` — and
+attaches to any task that should report:
 
 ```typescript
-import { GitHubStatusReporter } from '@pfenerty/tektonic';
+import { GitHubStatusReporter } from '@pfenerty/tektonic-reporter-github';
 
 const statusReporter = new GitHubStatusReporter();
 // Requires a 'github-token' Secret in the namespace with key 'token'

@@ -1,9 +1,74 @@
 # Changelog
 
-Notable changes to `@pfenerty/tektonic`. This file starts at the first change after 2.0.0;
-earlier history is in the git log.
+Notable changes to `@pfenerty/tektonic` and its provider packages, which version together.
+This file starts at the first change after 2.0.0; earlier history is in the git log.
 
 ## Unreleased
+
+### Breaking: the GCS backend and the GitHub reporter are separate packages
+
+`GcsBackend`/`gcs`/`DEFAULT_GCS_CACHE_IMAGE` and `GitHubStatusReporter`/`statusParam` are no
+longer exported from `@pfenerty/tektonic`. They now ship as:
+
+| Was | Is |
+|---|---|
+| `import { gcs, DEFAULT_GCS_CACHE_IMAGE } from '@pfenerty/tektonic'` | `import { gcs, DEFAULT_GCS_CACHE_IMAGE } from '@pfenerty/tektonic-cache-gcs'` |
+| `import { GitHubStatusReporter, statusParam } from '@pfenerty/tektonic'` | `import { GitHubStatusReporter, statusParam } from '@pfenerty/tektonic-reporter-github'` |
+
+**Migration is one `npm install` and one import line per file.** Both packages take
+`@pfenerty/tektonic` as a peer dependency, version together with it, and the synthesized YAML
+is byte-identical.
+
+```bash
+npm install @pfenerty/tektonic-cache-gcs @pfenerty/tektonic-reporter-github
+```
+
+The reason is verification, not tidiness. `CacheBackend`, `StatusReporter` and `ScriptLanguage`
+were all designed by someone consuming them from *inside* the same package, so nothing showed
+whether they supported an implementation written outside it. Moving the two built-in providers
+out — to packages that may import only the published surface, enforced by
+`scripts/check-provider-imports.mjs` at build time — turns that from an assumption into a check.
+It found two real defects, both fixed below.
+
+`PvcBackend` deliberately stays in core: it is the default when `TaskCacheSpec.backend` is
+omitted and its `needsPvcWorkspace` drives workspace auto-registration in `TaskDef`, so core
+depends on it structurally. It is this interface's reference implementation rather than a
+bundled provider. See [docs/cache-backends.md](docs/cache-backends.md#why-one-is-in-core-and-one-is-not).
+
+#### Fixed on the way
+
+- **`TektonicProject` decided whether to bind a cache PVC by matching `backend.type === 'gcs'`.**
+  Any out-of-tree remote backend — S3, Azure Blob, anything — got a PVC bound that it never
+  used. It now reads `needsPvcWorkspace`, which is what the interface has for exactly this.
+- **`stepExitCodePath` was unexported.** A `StatusReporter` implemented outside the package
+  could read the in-script contract file but not Tekton's own per-step exit codes, so a step
+  body calling `exit` directly reported green. It is exported now, and
+  [docs/status-reporters.md](docs/status-reporters.md) explains why both sources are needed.
+
+#### Cache helpers are now supported API
+
+`cacheScript`, `hashExpr`, `threadFlag`, `stagedExtract`, `COMPRESSED_CACHE_LANGUAGE` and
+`PORTABLE_CACHE_LANGUAGE` are exported from the package root. Extracting the GCS backend forced
+the choice between publishing them and duplicating them; publishing is right, because every
+backend needs the same key-hash semantics and a divergent hash is a silent cache miss rather
+than an error.
+
+#### Also moved
+
+- `DEFAULT_GCS_COMPRESSION_LEVEL` is no longer a core constant — it is GCS's own default and
+  now lives in `@pfenerty/tektonic-cache-gcs`. Per-cache `compressionLevel` is unchanged.
+- The repository is now an npm workspace. Contributors run every command from the root; see
+  [CONTRIBUTING.md](CONTRIBUTING.md). Consumers are unaffected beyond the import changes above.
+
+### Added
+
+- `@pfenerty/tektonic-cache-gcs` and `@pfenerty/tektonic-reporter-github`.
+- `stepExitCodePath` and the cache-author helpers listed above, exported from the package root.
+- [docs/status-reporters.md](docs/status-reporters.md) — the full `StatusReporter` method set,
+  including the optional/deprecated `createStatusReconcilerTask`/`createSkipResolverTask` pair
+  that `Pipeline` feature-detects between, documented well enough to implement from outside.
+- `npm run lint:imports` — fails the build on a deep import or a relative path from a provider
+  package into core. `npm test` runs it first.
 
 ### Breaking: injected-step images come from the project, not from a module constant
 
@@ -46,7 +111,7 @@ A bare string is taken at its word — synthesis stays offline and never probes 
 
 `ScriptLanguage` was documented as an extension point but was only half open: a third party
 could construct `new Script(myLanguage, body)` and nothing else. The name union and the
-extension map at `src/lib/script/` were both closed, so a registered language could not reach
+extension map at `packages/tektonic/src/lib/script/` were both closed, so a registered language could not reach
 `scriptFromFile`, the `{ language, body }` object form, task or project `defaultLanguage`, or
 `tektonic lint`'s file discovery.
 
@@ -85,19 +150,21 @@ testing helpers — are unaffected.
 - `injectedImageRef(...capabilities)`, `ImageCapability`, `InjectedStepImage`,
   `InjectedStepImageSpec` and `DEFAULT_INJECTED_STEP_IMAGE` are exported: a third-party cache
   backend, reporter or other injector declares what its steps need instead of hardcoding an
-  image, and inherits the project's choice.
-- `DEFAULT_GCS_CACHE_IMAGE` is now exported from the package root.
+  image, and inherits the project's choice. The two extracted provider packages are the first
+  out-of-tree consumers of it.
+- `DEFAULT_GCS_CACHE_IMAGE` is exported — from `@pfenerty/tektonic-cache-gcs`'s root,
+  per the package split above.
 - `SynthOptions.injectedStepImage` in `@pfenerty/tektonic/testing`.
 - `registerLanguage`, `unregisterLanguage`, `registeredLanguageNames`,
   `registeredExtensions`, `languageNameForExtension`, and the `KnownLanguageName`,
   `ScriptTag` and `RegisterLanguageOptions` types.
 - `assertExitCodeContract` and `interpreterAvailable` in `@pfenerty/tektonic/testing`.
 - `tektonic lint` discovers files from the language registry: `lintableExtensions()` replaces
-  the `LINTABLE_EXTENSIONS` constant in `src/cli/lint.ts`.
+  the `LINTABLE_EXTENSIONS` constant in `packages/tektonic/src/cli/lint.ts`.
 
 ### Changed
 
 - `DEFAULT_GCS_CACHE_IMAGE` now pins `ghcr.io/pfenerty/apko-cicd/gcloud:581.0.0` (was
   `563.0.0`). The tag had been bumped in this repo's synthesized manifests but not in the
-  constant that generates them; Renovate now updates the constant itself, so the two cannot
-  diverge again. See [CONTRIBUTING](CONTRIBUTING.md#dependency-updates).
+  constant that generates them; Renovate now updates the constant itself — at its new home in
+  `packages/tektonic-cache-gcs/` — so the two cannot diverge again. See [CONTRIBUTING](CONTRIBUTING.md#dependency-updates).

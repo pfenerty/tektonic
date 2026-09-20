@@ -14,14 +14,41 @@ the ceremony and stringly-typed fragility of hand-written YAML. Three principles
    build, test, or deploy your application — opinions like git-cloning live in opt-in subclasses
    (`GitPipeline`), and the images its injected steps run in come from the project
    (`injectedStepImage`), never from a registry the library picked.
-2. **Provider concerns are pluggable.** Caching, status reporting, scripting languages and
-   *synthesis itself* are strategy interfaces with built-in implementations, so no provider is
-   baked into the core: PAC is one `SynthTarget` among possible others, not the only way out.
+2. **Provider concerns are pluggable, and that is verified rather than asserted.** Caching,
+   status reporting, scripting languages and *synthesis itself* are strategy interfaces, and
+   the Google Cloud Storage backend and the GitHub reporter ship as separate packages that
+   consume only the published surface — so "a third party could implement this" is a thing CI
+   checks, not a claim. PAC is one `SynthTarget` among possible others, not the only way out.
 3. **The framework owns cross-cutting plumbing.** Exit-code capture, cache restore/save steps,
    git-clone, and status reporting are generated at synth time so consumers write intent, not
    boilerplate.
 
 ## Layout
+
+The repository is an npm workspace of three packages. The split is not cosmetic: the two
+provider packages import nothing but `@pfenerty/tektonic`'s published surface, which is the
+only evidence that the `CacheBackend` and `StatusReporter` seams support an implementation
+written outside this repo. `scripts/check-provider-imports.mjs` fails the build on a deep
+import or a relative path from a provider into core, and `npm test` runs it first.
+
+```
+packages/
+├── tektonic/                    # @pfenerty/tektonic — the core library (below)
+├── tektonic-cache-gcs/          # @pfenerty/tektonic-cache-gcs — GcsBackend
+└── tektonic-reporter-github/    # @pfenerty/tektonic-reporter-github — GitHubStatusReporter
+```
+
+Both providers take core as a **peer** dependency: a backend or reporter is matched to its
+task by object identity, and two copies of core are two incompatible sets of classes (the
+same reasoning as [job-libraries.md](job-libraries.md)). They version together with core for
+now, so the peer range stays simple.
+
+`PvcBackend` stays in core, deliberately. It is the default when `TaskCacheSpec.backend` is
+omitted and its `needsPvcWorkspace` drives workspace auto-registration in `TaskDef`, so core
+depends on it structurally — it is this interface's reference implementation rather than a
+bundled provider. See [cache-backends.md](cache-backends.md#why-one-is-in-core-and-one-is-not).
+
+Inside `packages/tektonic` — and every bare `src/…` path in this document is relative to it:
 
 ```
 src/
@@ -41,15 +68,15 @@ src/
     │   ├── synth-target.ts                           # extension interface: SynthTarget + SynthModel
     │   └── trigger.ts  trigger-events.ts            # provider-neutral firing config
     ├── script/               # ScriptLanguage plugins (sh/bash/nushell/python) + from-file
-    ├── cache/                # PvcBackend, GcsBackend, shared cache helpers
-    ├── reporters/            # GitHubStatusReporter
+    ├── cache/                # PvcBackend + the cache helpers backend authors reuse
     └── targets/              # SynthTarget implementations
         ├── pac/              # PacTarget + every PAC concept: annotations, params, {{ }} bindings
         └── tekton/           # TektonTarget: plain kind: Pipeline + kind: Task
 ```
 
 Nothing under `core/` mentions PAC. `grep -r 'pipelinesascode\|PAC_' src/lib/core/` returning
-nothing is the check that the seam has not leaked back.
+nothing is the check that the seam has not leaked back. The equivalent check for the provider
+seams is `npm run lint:imports`.
 
 Everything a consumer can touch is re-exported from `src/index.ts` — if it isn't there, it's
 internal. Keep that file the single source of truth for the public surface.
@@ -211,11 +238,15 @@ prove compliance; `src/lib/script/runtime.test.ts` is the same pattern written b
 Returns a `restoreStep` and `saveStep` for a `TaskCacheSpec`, given a `BackendCtx` that carries
 only the owning task's name and a project-level fallback image — nothing provider-specific, so a
 new backend costs the core no change. A backend needing a more specific image owns that default
-itself (`GcsBackend` does), and step images resolve `spec.image` → backend default →
+itself (the GCS backend does), and step images resolve `spec.image` → backend default →
 `ctx.defaultImage`. `needsPvcWorkspace` tells `TaskDef` whether to auto-register the cache
-workspace and wire finally-task workspaces. `PvcBackend` and `GcsBackend` are the built-ins;
-shared key-hashing/compression helpers live in `src/lib/cache/shared.ts`. See
-[cache-backends.md](cache-backends.md).
+workspace and wire finally-task workspaces — and is also what `TektonicProject` reads to
+decide whether to bind a PVC, rather than matching on `type === 'gcs'` as it once did.
+`PvcBackend` is the in-core reference implementation; `GcsBackend` ships in
+`@pfenerty/tektonic-cache-gcs`. The shared key-hashing and compression helpers in
+`src/lib/cache/shared.ts` are exported from the package root as supported API for backend
+authors — every backend needs the same hash semantics, and divergence there is a silent cache
+miss. See [cache-backends.md](cache-backends.md).
 
 ### `StatusReporter` (`src/lib/core/status-reporter.ts`)
 
@@ -227,8 +258,12 @@ and `/tekton/steps/step-<name>/exitCode` for each named user step, which Tekton'
 writes. The second source exists because the first is written *by the wrapped script*, so a body
 calling nushell's untrappable `exit` terminates before the wrapper can persist anything and
 leaves a stale `0`. Only the user steps are consulted — the injected cache steps also run with
-`onError: 'continue'`, but a failed cache save must stay non-fatal. `GitHubStatusReporter` is the
-built-in.
+`onError: 'continue'`, but a failed cache save must stay non-fatal. There is no in-core
+reporter: `GitHubStatusReporter` ships in `@pfenerty/tektonic-reporter-github`, and core's own
+tests use a fixture implementation of the interface (`src/__fixtures__/reporter.ts`) so what
+they assert is the contract rather than GitHub's wire format. The optional
+`createStatusReconcilerTask`/`createSkipResolverTask` pair is feature-detected by `Pipeline`;
+[status-reporters.md](status-reporters.md) documents the whole method set for implementers.
 
 ## Key design decisions
 

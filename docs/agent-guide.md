@@ -373,7 +373,7 @@ caches: [{ workspace: npmCache, storageSize: '5Gi' }]
 | `name` | required | Step name prefix (`restore-{name}-cache`) |
 | `key` | required | Key files; `[]` = fixed hash (always hits after first run) |
 | `paths` | required | Paths to cache relative to `workingDir` |
-| `backend` | PVC | `gcs({ bucket, prefix? })` for GCS |
+| `backend` | PVC | `gcs({ bucket, prefix? })` from `@pfenerty/tektonic-cache-gcs`, or your own `CacheBackend` |
 | `workspace` | — | Required for PVC backend |
 | `compress` | `false` | zstd compression into `.tar.zst` archive |
 | `compressionLevel` | `1` | zstd level 1–19 |
@@ -470,7 +470,7 @@ env: [{ name: 'GOMODCACHE', value: ws.at('.go-mod') }],
 ## GitHub Status Reporting
 
 ```typescript
-import { GitHubStatusReporter } from '@pfenerty/tektonic';
+import { GitHubStatusReporter } from '@pfenerty/tektonic-reporter-github';
 
 const reporter = new GitHubStatusReporter();
 // optional: new GitHubStatusReporter({ tokenSecretName: 'my-secret' })
@@ -878,12 +878,12 @@ import {
     GitPipeline,
     TektonicProject,
     TRIGGER_EVENTS,
-    GitHubStatusReporter,
     DEFAULT_BASE_IMAGE,
     sh,
     nu,
-    gcs,
 } from '@pfenerty/tektonic';
+import { gcs } from '@pfenerty/tektonic-cache-gcs';
+import { GitHubStatusReporter } from '@pfenerty/tektonic-reporter-github';
 
 const nodeImage = 'ghcr.io/pfenerty/apko-cicd/nodejs:22';
 const syftImage = 'ghcr.io/pfenerty/apko-cicd/syft:1.42.3';

@@ -1,0 +1,59 @@
+{
+  "name": "@pfenerty/tektonic",
+  "version": "2.0.0",
+  "description": "CDK8s constructs for composing Tekton pipelines as code",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pfenerty/tektonic.git",
+    "directory": "packages/tektonic"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/lib/testing/index.d.ts",
+      "import": "./dist/lib/testing/index.js",
+      "require": "./dist/lib/testing/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "testing": ["./dist/lib/testing/index.d.ts"]
+    }
+  },
+  "bin": {
+    "tektonic": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/*.js.map",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "build:watch": "tsc -b --watch",
+    "prepare": "npm run build"
+  },
+  "peerDependencies": {},
+  "dependencies": {
+    "cdk8s": "^2.68.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "~7.0.0",
+    "vitest": "^5.0.0"
+  }
+}
