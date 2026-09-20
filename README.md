@@ -27,9 +27,10 @@ files underneath.
 - **Scripts as first-class, testable files** — write step bodies in real `.sh`/`.bash`/`.nu`/
   `.py` files with IDE highlighting and linting, and unit-test them by running the real
   interpreter. See [docs/scripting.md](docs/scripting.md).
-- **Pluggable strategies** — caching, status reporting, and script languages are strategy
-  interfaces. Built-ins for PVC/GCS caching and GitHub ship in the box; swap in your own without
-  forking.
+- **Pluggable strategies, proven** — caching, status reporting, script languages and synthesis
+  itself are strategy interfaces. The GCS backend and the GitHub reporter ship as *separate
+  packages* that consume only tektonic's published surface, so "you can implement your own"
+  is something CI checks rather than something the README claims.
 - **GitOps-native via PAC** — output is in-repo `.tekton/` PipelineRun templates read from the
   pushed commit, so the pipeline that runs is always exactly what was committed. Multi-provider
   (GitHub, GitLab, Bitbucket, Gitea) is handled by the PAC operator — no per-provider trigger
@@ -39,13 +40,26 @@ files underneath.
 - **Portable output** — it emits plain Tekton + PAC resources. No runtime dependency on Tektonic
   in your cluster.
 
+## Packages
+
+| Package | What it is |
+|---|---|
+| [`@pfenerty/tektonic`](packages/tektonic) | The library: primitives, pipelines, PAC/Tekton synthesis, the `tektonic` CLI, and the PVC cache backend |
+| [`@pfenerty/tektonic-cache-gcs`](packages/tektonic-cache-gcs) | `gcs({ bucket })` — cache archives in a Google Cloud Storage bucket |
+| [`@pfenerty/tektonic-reporter-github`](packages/tektonic-reporter-github) | `GitHubStatusReporter` — per-task GitHub commit statuses |
+
+The provider packages take `@pfenerty/tektonic` as a peer dependency and version together with
+it. Install only what you use.
+
 ## Install
 
 ```bash
 npm install @pfenerty/tektonic cdk8s constructs
+# optional, as needed:
+npm install @pfenerty/tektonic-cache-gcs @pfenerty/tektonic-reporter-github
 ```
 
-Published to npmjs as a public package — no registry configuration or auth needed. Releases are
+Published to npmjs as public packages — no registry configuration or auth needed. Releases are
 cut by tagging `vX.Y.Z`, published through npm trusted publishing (OIDC, with a provenance
 attestation and no stored token); see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
@@ -120,6 +134,7 @@ See [docs/cli.md](docs/cli.md).
 - [Tekton Chains](docs/chains.md) — automatic SLSA provenance: git source, image subjects, signing annotations
 - [Pipelines as Code](docs/pac.md) — `TektonicProject` and in-repo `.tekton/` pipelines
 - [Custom cache backends](docs/cache-backends.md) — implement the `CacheBackend` interface
+- [Status reporters](docs/status-reporters.md) — implement the `StatusReporter` interface
 - [Architecture & internals](docs/architecture.md) — how Tektonic is built (for contributors)
 
 ## Requirements
@@ -134,10 +149,12 @@ See [docs/cli.md](docs/cli.md).
 
 ## Development
 
+Every command runs from the repository root, across all three workspace packages.
+
 ```bash
 flox activate -- npm install       # install dependencies
-flox activate -- npm run build     # compile TypeScript → dist/
-flox activate -- npm test          # run tests
+flox activate -- npm run build     # tsc -b → packages/*/dist/
+flox activate -- npm test          # provider-import check, build, then tests
 flox activate -- npm run lint:scripts  # lint extracted .sh/.bash/.nu/.py files
 flox activate -- npm run synth     # synthesize this repo's own CI into .tektonic/
 ```

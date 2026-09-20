@@ -23,8 +23,8 @@
       ],
       "customType": "regex",
       "managerFilePatterns": [
-        "src/lib/cache/gcs-backend.ts",
-        "src/lib/constants.ts",
+        "packages/tektonic/src/lib/constants.ts",
+        "packages/tektonic-cache-gcs/src/gcs-backend.ts",
         "examples/self-ci.ts"
       ],
       "matchStrings": [

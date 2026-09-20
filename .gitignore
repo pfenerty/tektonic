@@ -13,3 +13,4 @@ repomix-output.xml
 # Beads / Dolt files (added by bd init)
 .beads/proxieddb/
 *.gate.lock*
+*.tsbuildinfo

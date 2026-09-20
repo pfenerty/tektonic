@@ -1,13 +1,50 @@
 # Custom Cache Backends
 
-Tektonic ships two built-in cache backends:
+Tektonic ships two cache backends, in two packages:
 
-| Backend | Class | Factory | Storage |
-|---|---|---|---|
-| PVC (default) | `PvcBackend` | _(no factory; omit `backend`)_ | Kubernetes PersistentVolumeClaim |
-| GCS | `GcsBackend` | `gcs({ bucket, prefix?, image? })` | Google Cloud Storage bucket |
+| Backend | Package | Class | Factory | Storage |
+|---|---|---|---|---|
+| PVC (default) | `@pfenerty/tektonic` | `PvcBackend` | _(no factory; omit `backend`)_ | Kubernetes PersistentVolumeClaim |
+| GCS | `@pfenerty/tektonic-cache-gcs` | `GcsBackend` | `gcs({ bucket, prefix?, image? })` | Google Cloud Storage bucket |
 
 When `TaskCacheSpec.backend` is omitted, Tektonic uses `PvcBackend` automatically.
+
+## Why one is in core and one is not
+
+`PvcBackend` stays in core because core structurally depends on it. It is the default when
+`TaskCacheSpec.backend` is omitted, and its `needsPvcWorkspace` is what makes `TaskDef`
+auto-register the cache workspace on the task and prepend it to finally-task workspace
+bindings. Core cannot synthesize a task without knowing about it, so it is the *reference
+implementation* of this interface, not a bundled provider.
+
+`GcsBackend` has no such tie, so it moved out to `@pfenerty/tektonic-cache-gcs`. That is not
+tidiness: it is the only evidence this interface supports an out-of-tree implementation. That
+package imports nothing but `@pfenerty/tektonic`'s published surface — a build-time check
+fails the build on a deep import or a relative path into core — so anything a third-party
+backend needs and cannot reach breaks there first, in CI, rather than in your project.
+
+The asymmetry is therefore deliberate: one backend core owns, one backend that proves the
+seam. If you are weighing whether something belongs in core, `needsPvcWorkspace` is the test
+— does core have to know about it to synthesize a task?
+
+## Helpers core publishes for backend authors
+
+Every backend that compresses hashes its key files and pipes archives through `zstd` the
+same way. Diverge on the hash and you get silent cache misses rather than an error, so core
+exports the pieces `GcsBackend` and `PvcBackend` both use:
+
+| Export | What it does |
+|---|---|
+| `hashExpr(spec)` | The nushell expression computing a cache key hash from `spec.key` |
+| `threadFlag(spec, defaultMulti?)` | `-T0`/`-T1` from `spec.multiThreadCompression` |
+| `cacheScript(body, language)` | Wraps a step body in a `Script`, so the shebang and `log` preamble come from the language plugin rather than a hand-written heredoc |
+| `stagedExtract(spec, label, extract)` | Extracts through a staging dir and swaps each path in, instead of `rm -rf`-ing a tree another task on the same workspace may be reading |
+| `COMPRESSED_CACHE_LANGUAGE` / `PORTABLE_CACHE_LANGUAGE` | `'nushell'` and `'sh'` — the languages the built-in paths use |
+
+These are supported API, and `@pfenerty/tektonic-cache-gcs` consumes them through the package
+root like any other caller. Use them rather than reimplementing: `stagedExtract` in particular
+encodes a production failure (a restore deleting a module cache while a concurrent task
+compiled against it) that is invisible until it bites.
 
 ## The `CacheBackend` interface
 
@@ -126,8 +163,8 @@ private _image(spec: TaskCacheSpec, ctx: BackendCtx): string {
 The built-ins follow it. `PvcBackend` has no image of its own: an uncompressed cache lands on
 `ctx.defaultImage`, a compressed one asks for `nushell`/`tar`/`zstd`. `GcsBackend` asks for
 those plus `gcloud`, and yields to `gcs({ bucket, image: 'ghcr.io/example/gcloud:pinned' })`
-and then to `spec.image`. `DEFAULT_GCS_CACHE_IMAGE` is still exported as one image known to
-satisfy the GCS set:
+and then to `spec.image`. `DEFAULT_GCS_CACHE_IMAGE`, exported from
+`@pfenerty/tektonic-cache-gcs`, is one image known to satisfy the GCS set:
 
 ```ts
 gcs({ bucket: 'my-ci-cache', image: DEFAULT_GCS_CACHE_IMAGE })

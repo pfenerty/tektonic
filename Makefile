@@ -15,8 +15,8 @@ check:
 ## Print the self-CI task DAG (FORMAT=mermaid for a flowchart)
 graph:
 	flox activate -- npm run build
-	flox activate -- node dist/cli/index.js graph examples/self-ci.ts --format $(or $(FORMAT),text)
+	flox activate -- node packages/tektonic/dist/cli/index.js graph examples/self-ci.ts --format $(or $(FORMAT),text)
 
 ## Remove compiled output
 clean:
-	rm -rf dist/
+	flox activate -- npm run clean

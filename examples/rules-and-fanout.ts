@@ -20,7 +20,7 @@ import {
     onChanges,
     or,
     sh,
-} from "../dist/index.js";
+} from "../packages/tektonic/dist/index.js";
 
 const nodeImage = "node:22-alpine";
 

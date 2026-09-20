@@ -367,7 +367,7 @@ them.
 
 Because a script is a real file with a known interpreter, you can render it through its plugin
 and execute it for real in a unit test. This is the pattern Tektonic uses for its own plugins
-(`src/lib/script/runtime.test.ts`): render with `wrap`, run with the interpreter, assert both
+(`packages/tektonic/src/lib/script/runtime.test.ts`): render with `wrap`, run with the interpreter, assert both
 the process exit code and the captured contract file.
 
 ```typescript

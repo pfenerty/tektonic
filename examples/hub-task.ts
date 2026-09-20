@@ -19,7 +19,7 @@ import {
     Pipeline,
     TektonicProject,
     TRIGGER_EVENTS,
-} from "../dist/index.js";
+} from "../packages/tektonic/dist/index.js";
 
 // ── Shared workspace ─────────────────────────────────────────────────────────
 const output = new Workspace({ name: "output" });
