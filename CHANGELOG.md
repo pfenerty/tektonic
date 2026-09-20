@@ -42,6 +42,37 @@ injectedStepImage: { image: 'ghcr.io/acme/ci-base:1.4.0', provides: ['sh', 'git'
 
 A bare string is taken at its word — synthesis stays offline and never probes a registry.
 
+### Script languages are an open registry
+
+`ScriptLanguage` was documented as an extension point but was only half open: a third party
+could construct `new Script(myLanguage, body)` and nothing else. The name union and the
+extension map at `src/lib/script/` were both closed, so a registered language could not reach
+`scriptFromFile`, the `{ language, body }` object form, task or project `defaultLanguage`, or
+`tektonic lint`'s file discovery.
+
+`registerLanguage(lang, { extensions })` opens it, and returns the language's tagged-template
+helper so registration and use are one step:
+
+```ts
+export const rb = registerLanguage(new Ruby(), { extensions: ['.rb'] });
+// then: script: rb`puts "hi"`
+```
+
+The four built-ins register through the same function at import time — there is no privileged
+path into the registry. A name may be registered once (a second registration throws rather
+than overriding at a distance); a conflicting extension warns and the last one wins.
+
+`LanguageName` is now `KnownLanguageName | (string & {})`: any registered name type-checks
+where a built-in does, and `'nushell'` still autocompletes. The only source-compatible break
+is a `@ts-expect-error` on a call like `languageFor('ruby')` — that is a runtime error now,
+not a type error.
+
+`@pfenerty/tektonic/testing` gained `assertExitCodeContract(language, opts)` and
+`interpreterAvailable(bin)`. The exit-code contract is the one thing a language may not
+choose: a `wrap` that ignores `ctx.captureExitCode` reports a failed step as green. The
+helper renders a body, runs it with the real interpreter, and asserts both the process exit
+code and the contract file.
+
 ### Breaking: `TaskDef.synth` takes an options object
 
 `synth(scope, namespace, namePrefix?, stepSecurityContext?, defaultLanguage?, defaultImagePullPolicy?)`
@@ -57,3 +88,9 @@ testing helpers — are unaffected.
   image, and inherits the project's choice.
 - `DEFAULT_GCS_CACHE_IMAGE` is now exported from the package root.
 - `SynthOptions.injectedStepImage` in `@pfenerty/tektonic/testing`.
+- `registerLanguage`, `unregisterLanguage`, `registeredLanguageNames`,
+  `registeredExtensions`, `languageNameForExtension`, and the `KnownLanguageName`,
+  `ScriptTag` and `RegisterLanguageOptions` types.
+- `assertExitCodeContract` and `interpreterAvailable` in `@pfenerty/tektonic/testing`.
+- `tektonic lint` discovers files from the language registry: `lintableExtensions()` replaces
+  the `LINTABLE_EXTENSIONS` constant in `src/cli/lint.ts`.

@@ -1,15 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Script, dedent, languageFor } from './index';
+import { Script, dedent, languageFor, languageNameForExtension, registeredExtensions } from './index';
 import type { LanguageName } from './index';
-
-/** Maps a file extension to a built-in script language. */
-const EXTENSION_LANGUAGE: Record<string, LanguageName> = {
-  '.bash': 'bash',
-  '.sh': 'sh',
-  '.nu': 'nushell',
-  '.py': 'python',
-};
 
 /** Removes a leading shebang line so it isn't duplicated by the language wrapper. */
 function stripShebang(text: string): string {
@@ -24,11 +16,12 @@ function stripShebang(text: string): string {
  */
 export function languageNameForFile(filePath: string, override?: LanguageName): LanguageName {
   const ext = path.extname(filePath).toLowerCase();
-  const language = override ?? EXTENSION_LANGUAGE[ext];
+  const language = override ?? languageNameForExtension(ext);
   if (!language) {
     throw new Error(
       `cannot infer language from "${filePath}" (extension "${ext}"). ` +
-        `Pass a language explicitly or use one of ${Object.keys(EXTENSION_LANGUAGE).join(', ')}.`,
+        `Pass a language explicitly or use one of ${registeredExtensions().join(', ')}. ` +
+        `A language registered with registerLanguage(lang, { extensions }) claims its own.`,
     );
   }
   return language;
@@ -45,7 +38,8 @@ export function lintCommandForFile(filePath: string, opts?: { language?: Languag
 
 /**
  * Authors a step script from a file on disk, inferring the language from the
- * extension (`.bash`/`.sh` → bash, `.nu` → nushell, `.py` → python).
+ * extension (`.sh` → sh, `.bash` → bash, `.nu` → nushell, `.py` → python, plus any
+ * extension a registered language claims).
  *
  * The file is read immediately (relative to the current working directory unless
  * an absolute path is given) and returned as a {@link Script}, so it composes

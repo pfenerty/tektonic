@@ -48,6 +48,10 @@ indentation is preserved, which matters for Python).
 | `.nu`     | `nushell` |
 | `.py`     | `python` |
 
+The table is not fixed: it is the registry, and a language registered with
+`registerLanguage(lang, { extensions: ['.rb'] })` claims its own extensions alongside these.
+See [Registering your own language](#registering-your-own-language).
+
 Override the inference when the extension is ambiguous or unconventional:
 
 ```typescript
@@ -130,6 +134,87 @@ a user body (preamble + exit-code contract), and the command used to lint an ext
 | `python`  | `#!/usr/bin/env python3` | `python3 -m py_compile` | Body runs inside `def _tek_main()` |
 
 All four inject a timestamped `log` helper in their preamble.
+
+### Registering your own language
+
+The four built-ins are not privileged: they go through the same public registry any other
+package uses. `registerLanguage` takes a `ScriptLanguage` and returns its tagged-template
+helper, so registration and use are one step and the call site never names a string:
+
+```typescript
+// @acme/tektonic-lang-ruby
+import { registerLanguage, type ScriptCtx, type ScriptLanguage } from '@pfenerty/tektonic';
+
+class Ruby implements ScriptLanguage {
+  readonly name = 'ruby';
+  readonly shebang = '#!/usr/bin/env ruby';
+
+  wrap(body: string, ctx: ScriptCtx): string {
+    if (!ctx.captureExitCode) return `${this.shebang}\n${body}`;
+    // Run the body, persist the real code to ctx.exitCodePath, re-exit with it.
+    return [ /* … */ ].join('\n');
+  }
+
+  lintCommand(file: string): string[] {
+    return ['ruby', '-c', file];
+  }
+}
+
+export const rb = registerLanguage(new Ruby(), { extensions: ['.rb'] });
+```
+
+Importing that module is all a consumer does. From then on the language reaches every
+ergonomic the built-ins have:
+
+```typescript
+import { rb } from '@acme/tektonic-lang-ruby';
+
+script: rb`puts "hi"`                                  // the returned tag
+script: script({ language: 'ruby', body: 'puts 1' })   // the object form
+script: scriptFromFile('./check.rb')                   // extension inference
+new Task({ name: 'x', defaultLanguage: 'ruby', … })    // task/project default
+// and `tektonic lint` walks .rb files through `ruby -c`
+```
+
+`LanguageName` is open (`KnownLanguageName | (string & {})`), so an out-of-tree name
+type-checks wherever a built-in does while `'nushell'` still autocompletes.
+
+Registry rules worth knowing:
+
+- **A name may be registered once.** A second registration throws rather than overriding —
+  silently replacing a language would change every body that uses the name, at a distance.
+  Two copies of the same package in a tree is the usual cause; make tektonic a peer
+  dependency, as [job-libraries.md](job-libraries.md) describes.
+- **A conflicting extension warns and the last registration wins.** Pass an explicit
+  `{ language }` to `scriptFromFile` when two languages want the same extension.
+- **The exit-code contract is not optional.** A `wrap` that ignores `ctx.captureExitCode`
+  or writes to a path other than `ctx.exitCodePath` makes a failed step report *green*.
+  Prove compliance with the conformance helper below.
+- `unregisterLanguage(name)` exists for tests that register a throwaway language.
+
+#### Proving the contract
+
+`@pfenerty/tektonic/testing` exports `assertExitCodeContract`, which renders a body through
+your `wrap`, executes it with the real interpreter, and asserts both the process exit code
+and the contract file:
+
+```typescript
+import { assertExitCodeContract, interpreterAvailable } from '@pfenerty/tektonic/testing';
+
+it.skipIf(!interpreterAvailable('ruby'))('honours the exit-code contract', () => {
+  assertExitCodeContract(new Ruby(), {
+    interpreter: 'ruby',
+    extension: '.rb',
+    failing: code => `exit ${code}`,
+    succeeding: 'puts "ok"',
+  });
+});
+```
+
+It throws a described failure on a violation ("does not re-exit with the body's code", "does
+not write the real exit code to the contract file"). The static checks — shebang first, body
+preserved, `ctx.exitCodePath` honoured — run even when the interpreter is missing, in which
+case the result carries `skipped`.
 
 ### Default language for bare bodies
 
@@ -302,9 +387,11 @@ interpreter is unavailable so the suite stays hermetic (`it.skipIf(!has('nu'))`)
 
 ### Lint harness
 
-`tektonic lint` (or `npm run lint:scripts`) walks every `.sh`/`.bash`/`.nu`/`.py` file under `src/` and runs the
-per-language lint command (`shellcheck`, `nu-check`, `py_compile`). It skips gracefully when a
-linter isn't installed and fails only on real syntax errors. The command chooser is exported
+`tektonic lint` (or `npm run lint:scripts`) walks every file under `src/` whose extension a
+registered language claims — `.sh`/`.bash`/`.nu`/`.py` out of the box, plus anything
+`registerLanguage` added — and runs that language's `lintCommand` (`shellcheck`, `nu-check`,
+`py_compile`, …). It skips gracefully when a linter isn't installed and fails only on real
+syntax errors. The command chooser is exported
 as `lintCommandForFile(filePath, { language? })` if you want to build your own harness over a
 consumer repo's script files.
 
@@ -318,12 +405,18 @@ consumer repo's script files.
 | `Script` | A body paired with its `ScriptLanguage` |
 | `Sh` / `Bash` / `Nushell` / `Python` | The built-in language plugin classes |
 | `languageFor(name)` | Resolve a `LanguageName` to its plugin |
+| `registerLanguage(lang, { extensions? })` | Register a language; returns its tagged-template helper |
+| `unregisterLanguage(name)` | Remove a registered language (for tests) |
+| `registeredLanguageNames()` / `registeredExtensions()` | What the registry currently holds |
+| `languageNameForExtension(ext)` | The language claiming a file extension, if any |
 | `languageNameForFile(path, override?)` | Infer a language name from a file extension |
 | `lintCommandForFile(path, { language? })` | The lint argv for a script file |
 | `dedent(text)` | Strip common leading indentation (used internally by the tags) |
 | `renderScript(input, ctx, defaultLanguage?)` | Resolve a `ScriptInput` to its final string (synth-time) |
 | `EXIT_CODE_PATH` | The canonical contract path, `/tekton/home/.exit-code` |
-| `ScriptInput` / `ScriptObject` / `LanguageName` / `ScriptLanguage` / `ScriptCtx` | Types |
+| `ScriptInput` / `ScriptObject` / `LanguageName` / `KnownLanguageName` / `ScriptTag` / `ScriptLanguage` / `ScriptCtx` | Types |
+| `assertExitCodeContract` / `interpreterAvailable` (`/testing`) | Conformance harness for a language |
 
-To add a new language, implement `ScriptLanguage` and use it via `script`/the plugin directly —
-see [architecture.md](architecture.md#extension-points).
+To add a new language, implement `ScriptLanguage` and register it — see
+[Registering your own language](#registering-your-own-language) and
+[architecture.md](architecture.md#extension-points).
