@@ -1,6 +1,7 @@
 # Pipelines as Code (PAC)
 
-[`TektonicProject`](agent-guide.md#tektonicproject) is Tektonic's synthesizer. It generates
+[`TektonicProject`](agent-guide.md#tektonicproject) is Tektonic's synthesizer, and PAC is the
+target it emits for by default. It generates
 [Pipelines as Code](https://pipelinesascode.tekton.dev/) artifacts that live in your repo and
 are read directly from the pushed commit at runtime — no EventListener, no RBAC, no Flux sync
 race, and the pipeline that runs is always exactly what was committed. PAC also handles webhook
@@ -173,6 +174,7 @@ When `repoRelativePath` is omitted it defaults to `outdir`.
 | `defaultLanguage` | — | Default script language for bare-body steps |
 | `podTemplateEnv` | — | Env injected into every step of every task (see below) |
 | `pacEventContext` | `false` | Inject the PAC event context as `PAC_*` env vars (see below) |
+| `targets` | `[new PacTarget({ … })]` | Synthesis targets that emit the project (see below) |
 
 ### `podTemplateEnv`
 
@@ -227,6 +229,34 @@ Every pod gets `HOME=/tekton/home` unless the project sets its own. A pod-level 
 which Tekton's creds-init cannot write to — taking git and registry credentials with it.
 `/tekton/home` is the writable directory Tekton mounts for exactly that. Override it by putting
 `HOME` in `podTemplateEnv`.
+
+## Emitting something other than PAC
+
+PAC is one synthesis target, not the only way out. `TektonicProject` builds a provider-neutral
+model — pipeline specs, task manifests, workspace bindings, run defaults — and hands it to each
+of its `targets`; the default is a single `PacTarget` configured from the `repository`,
+`repoRelativePath`, `maxKeepRuns` and `pacEventContext` options above.
+
+Passing `targets` **replaces** that default, so keep a `PacTarget` in the list if you still want
+PAC output:
+
+```typescript
+import { PacTarget, TektonTarget, TektonicProject } from '@pfenerty/tektonic';
+
+new TektonicProject({
+  namespace: 'ci',
+  pipelines: [push, pr],
+  targets: [
+    new PacTarget({ repository: { url: 'https://github.com/acme/app' } }),
+    // Plain `kind: Pipeline` + `kind: Task`, for runs started by something other than PAC.
+    new TektonTarget({ pipelineDir: 'plain', taskDir: 'plain/tasks' }),
+  ],
+});
+```
+
+Targets share the outdir and own the file names they write, so give them distinct layouts.
+Writing your own means implementing `SynthTarget` — see
+[architecture.md](architecture.md#synthtarget-srclibcoresynth-targetts).
 
 See [secrets.md](secrets.md) for secret-injection patterns and [caching.md](caching.md) for
 cache configuration.

@@ -16,7 +16,7 @@ export { PvcBackend } from "./lib/cache/pvc-backend";
 export { GcsBackend, gcs } from "./lib/cache/gcs-backend";
 export type { GcsBackendOptions } from "./lib/cache/gcs-backend";
 export { gated, GatedTask, unwrapGated } from "./lib/core/pipeline-task";
-export { PAC_PARAMS, PAC_PARAM_BINDINGS, PAC_INJECTED_PARAMS, PAC_EVENT_ENV, TEKTON_HOME } from "./lib/core/pac-params";
+export { PAC_PARAMS, PAC_PARAM_BINDINGS, PAC_INJECTED_PARAMS, PAC_EVENT_ENV } from "./lib/targets/pac/params";
 export { serial, withConcurrency } from "./lib/core/scheduling";
 export { taskPreset } from "./lib/core/task-preset";
 export type { TaskPresetDefaults } from "./lib/core/task-preset";
@@ -42,17 +42,27 @@ export { onChanges } from "./lib/core/changes";
 export type { OnChangesOptions } from "./lib/core/changes";
 export { Pipeline } from "./lib/core/pipeline";
 export type { PipelineOptions } from "./lib/core/pipeline";
-export { globToRegex } from "./lib/core/pac-trigger";
-export type { PipelineTrigger, TriggerRule } from "./lib/core/pac-trigger";
+export { globToRegex } from "./lib/core/trigger";
+export type { PipelineTrigger, TriggerRule } from "./lib/core/trigger";
 export { GitPipeline } from "./lib/core/git-pipeline";
 export type { GitPipelineOptions } from "./lib/core/git-pipeline";
 export { TektonicProject } from "./lib/core/tektonic-project";
+export type { TektonicProjectOptions, CacheSpec } from "./lib/core/tektonic-project";
+
+// Synthesis targets
 export type {
-    TektonicProjectOptions,
-    CacheSpec,
-    RepositoryConfig,
-    RepositoryGitProvider,
-} from "./lib/core/tektonic-project";
+    SynthTarget,
+    SynthModel,
+    SynthDefaults,
+    BuiltPipeline,
+    BuiltTask,
+    EmittedFile,
+    PodEnvVar,
+} from "./lib/core/synth-target";
+export { PacTarget, triggerAnnotations, PAC_ANNOTATION_PREFIX } from "./lib/targets/pac";
+export type { PacTargetOptions, RepositoryConfig, RepositoryGitProvider } from "./lib/targets/pac";
+export { TektonTarget, pipelineManifest } from "./lib/targets/tekton";
+export type { TektonTargetOptions, PipelineManifestOptions } from "./lib/targets/tekton";
 export { TRIGGER_EVENTS } from "./lib/core/trigger-events";
 export type { StatusReporter } from "./lib/core/status-reporter";
 
@@ -80,4 +90,5 @@ export {
     DEFAULT_STEP_RESOURCES,
     DEFAULT_BASE_IMAGE,
     DEFAULT_GCS_COMPRESSION_LEVEL,
+    TEKTON_HOME,
 } from "./lib/constants";

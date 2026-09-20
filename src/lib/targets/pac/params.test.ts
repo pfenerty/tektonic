@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { App, Chart } from 'cdk8s';
-import { PAC_PARAMS, PAC_PARAM_BINDINGS, PAC_INJECTED_PARAMS } from './pac-params';
-import { Task } from './task';
-import { GitPipeline } from './git-pipeline';
-import { TRIGGER_EVENTS } from './trigger-events';
-import { Workspace } from './workspace';
-import { nu } from '../script';
+import { PAC_PARAMS, PAC_PARAM_BINDINGS, PAC_INJECTED_PARAMS } from './params';
+import { Task } from '../../core/task';
+import { GitPipeline } from '../../core/git-pipeline';
+import { TRIGGER_EVENTS } from '../../core/trigger-events';
+import { Workspace } from '../../core/workspace';
+import { nu } from '../../script';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyObj = Record<string, any>;

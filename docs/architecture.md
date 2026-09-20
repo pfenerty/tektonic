@@ -13,9 +13,9 @@ the ceremony and stringly-typed fragility of hand-written YAML. Three principles
    `Task`, `Pipeline`) are pure orchestration primitives. Tektonic never prescribes how you
    build, test, or deploy your application — opinions like git-cloning live in opt-in subclasses
    (`GitPipeline`) and overridable constants (`DEFAULT_BASE_IMAGE`).
-2. **Provider concerns are pluggable.** Caching, VCS triggers, status reporting, and scripting
-   languages are all strategy interfaces with built-in implementations, so no provider is baked
-   into the core.
+2. **Provider concerns are pluggable.** Caching, status reporting, scripting languages and
+   *synthesis itself* are strategy interfaces with built-in implementations, so no provider is
+   baked into the core: PAC is one `SynthTarget` among possible others, not the only way out.
 3. **The framework owns cross-cutting plumbing.** Exit-code capture, cache restore/save steps,
    git-clone, and status reporting are generated at synth time so consumers write intent, not
    boilerplate.
@@ -33,14 +33,21 @@ src/
     │   ├── pipeline.ts  git-pipeline.ts             # graph discovery, validation, topo-sort
     │   ├── pipeline-task.ts                          # gated() per-edge overrides (when/retry/timeout)
     │   ├── condition.ts  changes.ts                  # typed rules DSL + onChanges detection
-    │   ├── tektonic-project.ts                       # the PAC synthesizer
+    │   ├── tektonic-project.ts                       # builds the SynthModel, runs the targets
     │   ├── hub-task-ref.ts                           # TaskLike that references an ArtifactHub task
     │   ├── cache-backend.ts  status-reporter.ts     # extension interfaces
-    │   └── trigger-events.ts
+    │   ├── synth-target.ts                           # extension interface: SynthTarget + SynthModel
+    │   └── trigger.ts  trigger-events.ts            # provider-neutral firing config
     ├── script/               # ScriptLanguage plugins (sh/bash/nushell/python) + from-file
     ├── cache/                # PvcBackend, GcsBackend, shared cache helpers
-    └── reporters/            # GitHubStatusReporter
+    ├── reporters/            # GitHubStatusReporter
+    └── targets/              # SynthTarget implementations
+        ├── pac/              # PacTarget + every PAC concept: annotations, params, {{ }} bindings
+        └── tekton/           # TektonTarget: plain kind: Pipeline + kind: Task
 ```
+
+Nothing under `core/` mentions PAC. `grep -r 'pipelinesascode\|PAC_' src/lib/core/` returning
+nothing is the check that the seam has not leaked back.
 
 Everything a consumer can touch is re-exported from `src/index.ts` — if it isn't there, it's
 internal. Keep that file the single source of truth for the public surface.
@@ -61,10 +68,14 @@ Nothing is emitted until a synthesizer runs. The pipeline:
    detects status-reporting tasks and prepends a generated "set pending" task, and collects
    cache `finally` tasks. `GitPipeline` additionally creates the git-clone task and threads the
    shared workspace through every task.
-4. **Synthesize.** `TektonicProject`/`TektonicProject` call `pipeline._buildSpec()`, which validates the
-   graph, topologically sorts it, infers the param/workspace union, and emits the spec. Each
-   `TaskDef.synth()` renders its steps (including injected restore/save/reporter steps and
-   script wrapping) into a cdk8s `ApiObject`. cdk8s writes the YAML.
+4. **Build the model.** `TektonicProject` calls `pipeline._buildSpec()` per pipeline — which
+   validates the graph, topologically sorts it, infers the param/workspace union and emits the
+   spec — renders each unique `TaskDef.synth()` to a `Task` manifest (injected restore/save/
+   reporter steps and script wrapping included), resolves the cache/ephemeral workspace
+   bindings, and collects the run defaults. The result is a `SynthModel`: provider-neutral,
+   built once.
+5. **Emit.** Each `SynthTarget` is handed that model and writes files for its delivery
+   mechanism. The default is `PacTarget`; cdk8s writes the YAML.
 
 ### Dependency discovery, validation, ordering
 
@@ -97,16 +108,45 @@ This is the pattern to follow for new opinionated pipeline types: subclass `Pipe
 
 ### The synthesizer
 
-`TektonicProject` consumes `Pipeline._buildSpec()` and emits per-pipeline PAC `PipelineRun`
-templates with the spec **inlined**, one `Task` file per unique task, and an optional `Repository`
-custom resource — binding well-known params to PAC `{{ }}` variables. PAC (the operator) owns
-webhook delivery, event matching, status reporting, and multi-provider support, so Tektonic has no
+`TektonicProject` is the composition, not the emitter: it builds the `SynthModel` and hands it to
+its targets. `PacTarget`, the default, emits per-pipeline PAC `PipelineRun` templates with the
+spec **inlined**, one `Task` file per unique task, and an optional `Repository` custom resource —
+binding well-known params to PAC `{{ }}` variables. PAC (the operator) owns webhook delivery,
+event matching, status reporting, and multi-provider support, so Tektonic has no
 trigger/EventListener/RBAC code of its own. See [pac.md](pac.md).
+
+The PAC-only options on `TektonicProjectOptions` (`repository`, `repoRelativePath`, `maxKeepRuns`,
+`pacEventContext`) configure that default target. Passing `targets` replaces it, so a project that
+wants both composes them explicitly:
+
+```ts
+new TektonicProject({
+  namespace: 'ci',
+  pipelines,
+  targets: [new PacTarget({ repository: { url } }), new TektonTarget({ pipelineDir: 'plain' })],
+});
+```
 
 ## Extension points
 
-Tektonic has three strategy interfaces. Adding a provider means implementing one — never editing
+Tektonic has four strategy interfaces. Adding a provider means implementing one — never editing
 the core. Each is exported from `index.ts`.
+
+### `SynthTarget` (`src/lib/core/synth-target.ts`)
+
+Renders a `SynthModel` — pipeline specs, task manifests, workspace bindings, run defaults, with
+no delivery-mechanism concepts in it — into files under an outdir, and returns what it wrote.
+`PacTarget` and `TektonTarget` are the built-ins; a third party implements the interface to emit
+a Tekton Hub catalog entry, a GitOps overlay or a different file layout.
+
+Two optional members let a target reach back into the model it will be handed:
+`injectedParams` (params it binds on every run, so every pipeline spec must declare them — PAC's
+`repo-full-name` and friends) and `injectedEnv` (environment it contributes to every step — PAC's
+event context). The union across a project's targets is applied before any target emits, so one
+model serves them all.
+
+A target never receives PAC's annotations, `{{ }}` variables or `Repository` config; those are
+`PacTarget`'s own options.
 
 ### `ScriptLanguage` (`src/lib/script/types.ts`)
 

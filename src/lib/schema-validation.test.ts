@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { App, Chart } from 'cdk8s';
+import { pipelineManifest } from './targets/tekton/tekton-target';
 import { Task } from './core/task';
 import { Pipeline } from './core/pipeline';
 import { gated } from './core/pipeline-task';
@@ -215,20 +216,14 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
 
   it('PipelineSpec fields conform to v1.PipelineSpec schema', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [build] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     assertNoUnknownFields(manifest.spec as AnyObj, 'v1.PipelineSpec', 'spec');
   });
 
   it('pipeline task entries conform to v1.PipelineTask schema', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [build] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     for (const task of manifest.spec.tasks as AnyObj[]) {
       assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
@@ -249,10 +244,7 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
       steps: [{ name: 'build', image: 'node:22' }],
     });
     const pipeline = new Pipeline({ name: 'ci', tasks: [build] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     for (const task of manifest.spec.tasks as AnyObj[]) {
       assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
@@ -264,10 +256,7 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
       when: [{ input: '$(params.type)', operator: 'in', values: ['push'] }],
     });
     const pipeline = new Pipeline({ name: 'ci', tasks: [gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     for (const task of manifest.spec.tasks as AnyObj[]) {
       assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
@@ -277,10 +266,7 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
   it('pipeline task with CEL when clause conforms to v1.PipelineTask schema', () => {
     const gatedBuild = gated(build, { when: onBranchMatching('^(main|release/.*)$') });
     const pipeline = new Pipeline({ name: 'ci', tasks: [gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.when?.[0]?.cel).toContain('.matches(');
@@ -305,10 +291,7 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
     });
     void detect;
     const pipeline = new Pipeline({ name: 'ci', tasks: [deploy] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     for (const task of manifest.spec.tasks as AnyObj[]) {
       assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
@@ -318,10 +301,7 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
   it('pipeline task with retries and timeout conforms to v1.PipelineTask schema', () => {
     const gatedBuild = gated(build, { retries: 2, timeout: '30m' });
     const pipeline = new Pipeline({ name: 'ci', tasks: [gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     for (const task of manifest.spec.tasks as AnyObj[]) {
       assertNoUnknownFields(task, 'v1.PipelineTask', 'spec.tasks[]');
@@ -331,10 +311,7 @@ describe('Tekton v1 schema conformance — Pipeline', () => {
   it('Pipeline with finally tasks conforms to v1.PipelineSpec and v1.PipelineTask schema', () => {
     const report = new Task({ name: 'report', steps: [{ name: 'done', image: 'alpine' }] });
     const pipeline = new Pipeline({ name: 'ci', tasks: [build], finallyTasks: [report] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     assertNoUnknownFields(manifest.spec as AnyObj, 'v1.PipelineSpec', 'spec');
     for (const task of manifest.spec.finally as AnyObj[]) {

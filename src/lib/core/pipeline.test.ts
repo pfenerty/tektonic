@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { App, Chart } from 'cdk8s';
+import { pipelineManifest } from '../targets/tekton/tekton-target';
 import { Pipeline } from './pipeline';
 import { Task } from './task';
 import { Param } from './param';
@@ -81,9 +82,7 @@ describe('Pipeline', () => {
     const dup = new Task({ name: 'clone', steps: [{ name: 's', image: 'alpine' }] });
     expect(() => {
       const p = new Pipeline({ name: 'bad', tasks: [clone, dup] });
-      const app = new App();
-      const chart = new Chart(app, 'test');
-      p._build(chart, 'pipeline', 'ns');
+      pipelineManifest(p, { namespace: 'ns' });
     }).toThrow(/duplicate task name/);
   });
 
@@ -94,18 +93,13 @@ describe('Pipeline', () => {
     (a as any).needs = [b];
     expect(() => {
       const p = new Pipeline({ name: 'cycle', tasks: [a, b] });
-      const app = new App();
-      const chart = new Chart(app, 'test');
-      p._build(chart, 'pipeline', 'ns');
+      pipelineManifest(p, { namespace: 'ns' });
     }).toThrow(/cycle/);
   });
 
-  it('_build() produces valid Pipeline resource', () => {
+  it('pipelineManifest() produces valid Pipeline resource', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [test, build] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'my-ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'my-ns' }) as any;
     expect(manifest.apiVersion).toBe('tekton.dev/v1');
     expect(manifest.kind).toBe('Pipeline');
     expect(manifest.metadata.name).toBe('ci');
@@ -128,12 +122,9 @@ describe('Pipeline', () => {
     expect(cloneTask.runAfter).toBeUndefined();
   });
 
-  it('_build() applies namePrefix', () => {
+  it('pipelineManifest() applies namePrefix', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [test] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns', [], 'myapp');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns', extraParams: [], namePrefix: 'myapp' }) as any;
     expect(manifest.metadata.name).toBe('myapp-ci');
     // taskRefs should also be prefixed
     const cloneTask = manifest.spec.tasks.find((t: any) => t.name === 'clone');
@@ -162,7 +153,7 @@ describe('Pipeline', () => {
     expect(wsNames).toContain('workspace');
   });
 
-  it('_build() produces finally block in Pipeline spec', () => {
+  it('pipelineManifest() produces finally block in Pipeline spec', () => {
     const finalTask = new Task({
       name: 'final',
       steps: [{ name: 'done', image: 'alpine' }],
@@ -172,10 +163,7 @@ describe('Pipeline', () => {
       tasks: [test],
       finallyTasks: [finalTask],
     });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     expect(manifest.spec.finally).toHaveLength(1);
     expect(manifest.spec.finally[0].name).toBe('final');
     // finally tasks should not have runAfter
@@ -194,10 +182,7 @@ describe('Pipeline', () => {
       steps: [{ name: 's', image: 'alpine' }],
     });
     const pipeline = new Pipeline({ name: 'ci', tasks: [reportingTask, plainTask] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     const lintSpec = manifest.spec.tasks.find((t: any) => t.name === 'lint');
     // lint has no statusReporter — must not depend on set-status-pending
     expect(lintSpec.runAfter).toBeUndefined();
@@ -213,12 +198,10 @@ describe('Pipeline', () => {
     // Distinct task instances per pipeline (shared instances can't span pipelines via needs).
     const push = new Pipeline({ name: 'push', tasks: [mk('build'), mk('publish')] });
     const pr = new Pipeline({ name: 'pull-request', tasks: [mk('build')] });
-    const nameOf = (p: Pipeline) => {
-      const app = new App();
-      const chart = new Chart(app, p.name);
-      p._build(chart, 'pipeline', 'ns');
-      return chart.toJson()[0].spec.tasks.map((t: any) => t.name).find((n: string) => n.startsWith('set-status-pending'));
-    };
+    const nameOf = (p: Pipeline) =>
+      (pipelineManifest(p, { namespace: 'ns' }) as any).spec.tasks
+        .map((t: any) => t.name)
+        .find((n: string) => n.startsWith('set-status-pending'));
     expect(nameOf(push)).toBe('set-status-pending-push');
     expect(nameOf(pr)).toBe('set-status-pending-pull-request');
     expect(nameOf(push)).not.toBe(nameOf(pr));
@@ -233,10 +216,7 @@ describe('Pipeline', () => {
       steps: [{ name: 's', image: 'alpine', onError: 'continue' }],
     });
     const pipeline = new Pipeline({ name: 'ci', tasks: [reportingTask] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     const finallyTasks = manifest.spec.finally ?? [];
     expect(finallyTasks.find((t: any) => t.name === 'reconcile-status-ci')).toBeDefined();
     // finally tasks are not chained via runAfter — they always run after the whole DAG.
@@ -260,10 +240,7 @@ describe('Pipeline', () => {
       name: 'ci',
       tasks: [gated(reportingTask, { when: onBranch('main') })],
     });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     const finallyTasks = manifest.spec.finally ?? [];
     expect(finallyTasks.find((t: any) => t.name === 'reconcile-status-ci')).toBeDefined();
   });
@@ -278,10 +255,7 @@ describe('Pipeline', () => {
       steps: [{ name: 's', image: 'alpine', onError: 'continue' }],
     });
     const pipeline = new Pipeline({ name: 'ci', tasks: [reportingTask] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     const reconciler = (manifest.spec.finally ?? []).find((t: any) => t.name === 'reconcile-status-ci');
     expect(reconciler).toBeDefined();
     expect(reconciler.params).toContainEqual({ name: 'status-test-ungated', value: '$(tasks.test-ungated.status)' });
@@ -299,30 +273,22 @@ describe('Pipeline', () => {
       name: 'ci',
       tasks: [mkTask('plain'), mkTask('guarded', onBranch('main'))],
     });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const reconciler = (chart.toJson()[0].spec.finally ?? []).find((t: any) => t.name === 'reconcile-status-ci');
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
+    const reconciler = (manifest.spec.finally ?? []).find((t: any) => t.name === 'reconcile-status-ci');
     expect(reconciler.params.map((p: any) => p.name)).toEqual(
       expect.arrayContaining(['status-plain', 'status-guarded']),
     );
   });
 
-  it('_build() omits finally when no finally tasks', () => {
+  it('pipelineManifest() omits finally when no finally tasks', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [test] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     expect(manifest.spec.finally).toBeUndefined();
   });
 
-  it('_build() includes extra params', () => {
+  it('pipelineManifest() includes extra params', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [test] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns', [{ name: 'project-name', type: 'string' }]);
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns', extraParams: [{ name: 'project-name', type: 'string' }] }) as any;
     const paramNames = manifest.spec.params.map((p: any) => p.name);
     expect(paramNames).toContain('project-name');
     expect(paramNames).toContain('url');
@@ -355,10 +321,7 @@ describe('Pipeline', () => {
     it('auto-discovers the producing task and emits matrix + runAfter', () => {
       const { deploy } = buildFanoutPipeline();
       const pipeline = new Pipeline({ name: 'ci', tasks: [deploy] });
-      const app = new App();
-      const chart = new Chart(app, 'test');
-      pipeline._build(chart, 'pipeline', 'ns');
-      const manifest = chart.toJson()[0] as any;
+      const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
 
       const deployEntry = manifest.spec.tasks.find((t: any) => t.name === 'deploy');
       expect(deployEntry.matrix).toEqual({
@@ -384,12 +347,7 @@ describe('multiple status reporters', () => {
   const reportingTask = (name: string, reporter: GitHubStatusReporter) =>
     new Task({ name, statusReporter: reporter, steps: [{ name: 's', image: 'alpine' }] });
 
-  const specOf = (pipeline: Pipeline) => {
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    return chart.toJson()[0].spec;
-  };
+  const specOf = (pipeline: Pipeline) => (pipelineManifest(pipeline, { namespace: 'ns' }) as any).spec;
 
   it('emits one pending task per reporter instance', () => {
     // Two instances of the same class still differ (failOnError here); two different

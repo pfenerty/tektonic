@@ -1,13 +1,10 @@
-import { Construct } from 'constructs';
-import { ApiObject } from 'cdk8s';
-import { TEKTON_API_V1 } from '../constants';
 import { Param } from './param';
 import { Workspace } from './workspace';
 import { Task, TaskLike, TaskDef } from './task';
 import type { StatusReporter } from './status-reporter';
 import { TRIGGER_EVENTS } from './trigger-events';
-import { triggerEvents } from './pac-trigger';
-import type { PipelineTrigger } from './pac-trigger';
+import { triggerEvents } from './trigger';
+import type { PipelineTrigger } from './trigger';
 import { Condition } from './condition';
 import { applyOverrides, unwrapGated, GatedTask } from './pipeline-task';
 import type { PipelineTaskOverrides } from './pipeline-task';
@@ -30,7 +27,8 @@ export interface PipelineOptions {
   name?: string;
   /**
    * Firing config — when this pipeline runs (events, branches, paths, comment/label filters).
-   * See {@link PipelineTrigger}. A pipeline without a `trigger` is not emitted.
+   * See {@link PipelineTrigger}. A pipeline without a `trigger` has nothing to fire it under
+   * PAC, so the PAC target skips it; a plain-Tekton target emits it anyway.
    */
   trigger?: PipelineTrigger;
   /** Top-level tasks. Transitive dependencies are auto-discovered via `task.needs`. */
@@ -56,7 +54,7 @@ export interface PipelineOptions {
  */
 export class Pipeline {
   readonly name: string;
-  /** Firing config (events, branches, paths, …), emitted as PAC annotations by TektonicProject. */
+  /** Firing config (events, branches, paths, …), compiled by whichever target emits the run. */
   readonly trigger?: PipelineTrigger;
   /** Trigger events associated with this pipeline (union of `trigger.rules[].on`). */
   readonly events: TRIGGER_EVENTS[];
@@ -295,7 +293,10 @@ export class Pipeline {
 
   /**
    * @internal Returns the Pipeline spec as a plain object.
-   * Used by {@link TektonicProject} to inline the spec into a PAC PipelineRun template.
+   *
+   * {@link TektonicProject} calls this once per pipeline when it builds the `SynthModel`;
+   * every synthesis target then emits the same spec — inlined into a PAC `PipelineRun`
+   * template, or as the `spec` of a standalone `kind: Pipeline`.
    */
   _buildSpec(
     extraParams?: Record<string, unknown>[],
@@ -315,29 +316,6 @@ export class Pipeline {
         ),
       }),
     };
-  }
-
-  /**
-   * @internal Synthesizes a standalone `kind: Pipeline` resource. Not used by the PAC
-   * synthesizer (which inlines the spec via {@link Pipeline._buildSpec}); retained for
-   * tests and custom synthesis.
-   */
-  _build(
-    scope: Construct,
-    id: string,
-    namespace: string,
-    extraParams?: Record<string, unknown>[],
-    namePrefix?: string,
-  ): void {
-    new ApiObject(scope, id, {
-      apiVersion: TEKTON_API_V1,
-      kind: 'Pipeline',
-      metadata: {
-        name: namePrefix ? `${namePrefix}-${this.name}` : this.name,
-        namespace,
-      },
-      spec: this._buildSpec(extraParams, namePrefix),
-    });
   }
 
   /**

@@ -29,20 +29,19 @@ extension points. At a glance:
 src/
 ├── index.ts                      # public API re-exports (the entire public surface)
 ├── constants.ts                  # API versions, defaults, security contexts, images
-├── charts/
-│   └── tekton-infra.chart.ts     # trigger infrastructure chart
+├── cli/                          # the `tektonic` CLI (synth, check, graph, lint)
 └── lib/
     ├── core/                     # primitives, orchestrators, extension interfaces
     │   ├── param.ts  workspace.ts  result.ts
     │   ├── task.ts               # TaskDef (aka Task)
     │   ├── pipeline.ts  git-pipeline.ts  pipeline-task.ts
-    │   ├── tekton-project.ts  pac-project.ts      # the two synthesizers
-    │   ├── hub-task-ref.ts  trigger-events.ts
-    │   └── cache-backend.ts  status-reporter.ts   # extension interfaces
+    │   ├── tektonic-project.ts   # builds the SynthModel, runs the targets
+    │   ├── hub-task-ref.ts  trigger.ts  trigger-events.ts
+    │   └── cache-backend.ts  status-reporter.ts  synth-target.ts   # extension interfaces
     ├── script/                   # ScriptLanguage plugins (sh/bash/nushell/python) + from-file
     ├── cache/                    # PvcBackend, GcsBackend, shared helpers
-    ├── triggers/                 # VcsProvider + GitHub triggers
-    └── reporters/                # GitHubStatusReporter
+    ├── reporters/                # GitHubStatusReporter
+    └── targets/                  # SynthTarget implementations (pac/, tekton/)
 examples/
 ├── main.ts                       # Go pipeline example
 └── self-ci.ts                    # this project's own CI pipeline

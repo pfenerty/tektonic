@@ -1,4 +1,4 @@
-import { Param } from './param';
+import { Param } from '../../core/param';
 
 /**
  * The pipeline params [Pipelines as Code](https://pipelinesascode.tekton.dev/) fills in for
@@ -98,13 +98,3 @@ export const PAC_EVENT_ENV: Record<string, string> = {
   PAC_REPO_OWNER: '{{ repo_owner }}',
   PAC_REPO_NAME: '{{ repo_name }}',
 };
-
-/**
- * Home directory every pod gets unless the project sets its own `HOME`.
- *
- * A pod-level `runAsUser` (tektonic sets one by default) usually has no `/etc/passwd` entry,
- * so `$HOME` resolves to `/` — which Tekton's creds-init cannot write to, taking git and
- * registry credentials down with it. `/tekton/home` is the directory Tekton mounts writable
- * for exactly this.
- */
-export const TEKTON_HOME = '/tekton/home';

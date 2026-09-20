@@ -79,3 +79,13 @@ export const DEFAULT_STEP_RESOURCES = {
     requests: { cpu: "100m", memory: "128Mi" },
     limits: { cpu: "1", memory: "512Mi" },
 } as const;
+
+/**
+ * Home directory every pod gets unless the project sets its own `HOME`.
+ *
+ * A pod-level `runAsUser` (tektonic sets one by default) usually has no `/etc/passwd` entry,
+ * so `$HOME` resolves to `/` — which Tekton's creds-init cannot write to, taking git and
+ * registry credentials down with it. `/tekton/home` is the directory Tekton mounts writable
+ * for exactly this.
+ */
+export const TEKTON_HOME = "/tekton/home";

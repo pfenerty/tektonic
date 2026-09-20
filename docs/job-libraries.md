@@ -106,7 +106,7 @@ major version:
 | `Param`, `Workspace`, `Result` | typed handles; `toString()` renders the Tekton expression |
 | `ScriptInput`, `Script`, `sh`/`bash`/`nu`/`py`, `fragment`, `scriptFromFile` | script authoring |
 | `Condition`, `equals`/`isIn`/`onBranch`/`onChanges`/`and`/`or`/`not` | gating |
-| `StatusReporter`, `CacheBackend`, `ScriptLanguage` | strategy interfaces to implement |
+| `StatusReporter`, `CacheBackend`, `ScriptLanguage`, `SynthTarget` | strategy interfaces to implement |
 | `PAC_PARAMS`, `PAC_EVENT_ENV` | the PAC-supplied params and event context |
 | `@pfenerty/tektonic/testing` | `synthPipeline` / `synthTask` for the library's own tests |
 
