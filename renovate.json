@@ -4,6 +4,35 @@
   "lockFileMaintenance": {
     "enabled": true
   },
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__fixtures__/**",
+    ".tektonic/**"
+  ],
+  "customManagers": [
+    {
+      "description": [
+        "Image pins live in TypeScript; .tektonic/ is synthesized from it. The Ansible manager matches .tektonic/tasks/*.k8s.yaml by accident of the path, so bumps used to land in the emitted YAML while the source that generates it stayed behind — and the next `tektonic synth` reverted them. .tektonic is ignored above; these are the files that actually own a version.",
+        "config:recommended ignores examples/ by default, which is why ignorePaths is spelled out here without it.",
+        "Add a file when it grows a versioned image literal. Unversioned tags (base:stable) are left alone by the leading digit required of currentValue."
+      ],
+      "customType": "regex",
+      "managerFilePatterns": [
+        "src/lib/cache/gcs-backend.ts",
+        "src/lib/constants.ts",
+        "examples/self-ci.ts"
+      ],
+      "matchStrings": [
+        "['\"](?<depName>ghcr\\.io/[^'\"\\s:]+):(?<currentValue>\\d[^'\"\\s]*)['\"]"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
   "packageRules": [
     {
       "matchPackageNames": ["vite", "vitest", "@vitest/**", "@vitejs/**"],

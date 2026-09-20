@@ -94,3 +94,10 @@ testing helpers — are unaffected.
 - `assertExitCodeContract` and `interpreterAvailable` in `@pfenerty/tektonic/testing`.
 - `tektonic lint` discovers files from the language registry: `lintableExtensions()` replaces
   the `LINTABLE_EXTENSIONS` constant in `src/cli/lint.ts`.
+
+### Changed
+
+- `DEFAULT_GCS_CACHE_IMAGE` now pins `ghcr.io/pfenerty/apko-cicd/gcloud:581.0.0` (was
+  `563.0.0`). The tag had been bumped in this repo's synthesized manifests but not in the
+  constant that generates them; Renovate now updates the constant itself, so the two cannot
+  diverge again. See [CONTRIBUTING](CONTRIBUTING.md#dependency-updates).

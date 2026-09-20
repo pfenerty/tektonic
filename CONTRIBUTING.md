@@ -75,6 +75,26 @@ Run `tektonic lint` (or `npm run lint:scripts`) to syntax-check any `.sh`/`.bash
 3. Ensure `npm run build` and `npm test` pass
 4. Open a PR against `main`
 
+## Dependency updates
+
+Renovate opens the dependency PRs. Two rules keep it from fighting the synthesizer:
+
+- **`.tektonic/` is output, never source.** It is `ignorePaths`-ed in `renovate.json`. (It used
+  to be updated by accident: Renovate's Ansible manager matches any `tasks/*.yaml`, so image
+  bumps landed in the emitted YAML while the TypeScript that generates it stayed behind, and the
+  next `npm run synth` reverted them.)
+- **Image pins live in TypeScript**, and a `customManagers` regex in `renovate.json` updates
+  them there — currently `src/lib/cache/gcs-backend.ts`, `src/lib/constants.ts` and
+  `examples/self-ci.ts`. Add a file to that list when it grows a versioned image literal; a
+  floating tag such as `base:stable` is skipped, since the regex requires a leading digit.
+
+Renovate cannot run the synthesizer, so `.github/workflows/synth-manifests.yml` does it for
+it: on every push to a `renovate/**` branch it runs `npm run synth` and commits any manifest
+change back onto that branch, so the bump and the manifests it implies land in one PR. The
+`check-manifests` step in the self-CI `test-npm` task is the backstop — `npm run check` fails
+the build whenever the committed `.tektonic/` differs from what `examples/self-ci.ts`
+synthesizes.
+
 ## Releasing
 
 The package is published to **npmjs as `@pfenerty/tektonic`** by the `publish` GitHub Actions
