@@ -1,5 +1,6 @@
 import { TaskDef } from './task';
 import type { TaskOptions, TaskStepSpec } from './task';
+import { Action } from './action';
 import type { Param } from './param';
 import type { Workspace } from './workspace';
 
@@ -75,7 +76,7 @@ export function taskPreset(defaults: TaskPresetDefaults): (opts: TaskOptions) =>
   const { step: stepDefaults, ...taskDefaults } = defaults;
 
   return (opts: TaskOptions): TaskDef => {
-    const steps = opts.steps.map(step => {
+    const withDefaults = (step: TaskStepSpec): TaskStepSpec => {
       if (!stepDefaults) return step;
       return {
         ...stepDefaults,
@@ -85,7 +86,13 @@ export function taskPreset(defaults: TaskPresetDefaults): (opts: TaskOptions) =>
           ? { volumeMounts: [...(stepDefaults.volumeMounts ?? []), ...(step.volumeMounts ?? [])] }
           : {}),
       } as TaskStepSpec;
-    });
+    };
+
+    // A composed action's steps take the preset too — a library action should pick up the
+    // project's resources, base env and security context the way a hand-written step does.
+    const steps = opts.steps.map(step =>
+      step instanceof Action ? step._withSteps(withDefaults) : withDefaults(step),
+    );
 
     return new TaskDef({
       ...taskDefaults,

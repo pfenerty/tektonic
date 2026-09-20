@@ -4,7 +4,17 @@ export type { ParamOptions } from "./lib/core/param";
 export { Workspace } from "./lib/core/workspace";
 export type { WorkspaceOptions } from "./lib/core/workspace";
 export { Task, TaskDef } from "./lib/core/task";
-export type { TaskLike, TaskOptions, TaskStepSpec, TaskCacheSpec, TaskSidecarSpec, TaskVolumeSpec, ImagePullPolicy } from "./lib/core/task";
+export type { TaskLike, TaskOptions, TaskStepSpec, TaskStepInput, TaskCacheSpec, TaskSidecarSpec, TaskVolumeSpec, ImagePullPolicy } from "./lib/core/task";
+export { defineAction, Action, ActionOutput, ACTION_OUTPUT_DIR, ACTION_VOLUME_NAME } from "./lib/core/action";
+export type {
+    ActionDefinition,
+    ActionCtx,
+    ActionOptions,
+    ActionOutputs,
+    ActionStepSpec,
+    ActionContribution,
+    ActionPromotionOptions,
+} from "./lib/core/action";
 export { Result } from "./lib/core/result";
 export type { ResultOptions } from "./lib/core/result";
 export { ChainsImage } from "./lib/core/chains-image";

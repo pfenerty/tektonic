@@ -155,6 +155,64 @@ const task = new Task({
 - `when` gates the job with a typed rule, `fanOut` runs it once per runtime item, and `retries`/
   `timeout` tune the TaskRun — see [Rules & Conditions](#rules--conditions) and
   [Fan-Out (dynamic jobs)](#fan-out-dynamic-jobs).
+- A `steps` entry may be an [Action](#action) — reusable, typed work inside this same pod.
+
+## Action
+
+A **task is a job**: one pod, one node in the graph, one status context. An **action** is
+reusable work *inside* one — typed inputs, typed outputs, a version, rendering to steps of the
+task that composes it. Use it for the cheap case where a separate pod would buy nothing:
+
+```typescript
+import { defineAction, sh, type ActionOutput } from '@pfenerty/tektonic';
+
+const syft = defineAction<{ image: string }, 'sbom'>({
+  name: 'syft',
+  version: '1.0.0',
+  image: 'ghcr.io/example/syft:1.42.3',
+  outputs: { sbom: 'sbom.json' },               // → /tektonic/actions/syft-sbom.json
+  steps: ({ inputs, outputs }) => [
+    { name: 'sbom', script: sh`syft "${inputs.image}" -o cyclonedx-json=${outputs.sbom}` },
+  ],
+});
+
+const grype = defineAction<{ sbom: ActionOutput | string }, 'sarif'>({
+  name: 'grype',
+  version: '1.0.0',
+  image: 'ghcr.io/example/grype:0.110.0',
+  outputs: { sarif: 'scan.sarif' },
+  steps: ({ inputs, outputs }) => [
+    { name: 'scan', script: sh`grype sbom:${inputs.sbom} -o sarif=${outputs.sarif}` },
+  ],
+});
+
+const sbom = syft({ image: 'app:1.0' });
+const scan = grype({ sbom: sbom.outputs.sbom });   // typed handle — no path convention
+
+const sarifPath = new Result({ name: 'sarif-path' });
+const depScan = new Task({
+  name: 'dep-scan',
+  statusReporter,
+  steps: [sbom, scan, scan.outputs.sarif.toResult(sarifPath)],
+});
+```
+
+**Key behaviors:**
+- Steps are named `<instance>-<step>` (`syft-sbom`, `grype-scan`) — or just the instance name
+  when the step is named after it. Pass `{ name }` as the second argument to compose the same
+  action twice in one task.
+- Outputs live on a pod-scoped volume tektonic mounts on every step, so any later step — action
+  or hand-written — can read `${scan.outputs.sarif}`.
+- An action's `params`, `workspaces`, `caches`, `volumes` and `results` merge into the task;
+  the task's own entries win by name.
+- Crossing the *pod* boundary is explicit: `output.toResult(result)` (≤4KB) or
+  `output.toWorkspace(ws, 'dest')` (anything larger). Both return an action you place in `steps`.
+- Action steps are ordinary steps at synth time: the step template, pull policy, `taskPreset`
+  defaults and the exit-code contract all apply, and an action cannot opt out of the contract.
+
+Actions are pod-internal. For a reusable unit that is its *own* pod, that is a job — see
+[job-libraries.md](job-libraries.md) — or, when it lives in a remote catalog,
+[HubTaskRef](#hubtaskref).
 
 ## GitPipeline
 
@@ -494,6 +552,8 @@ const pipeline = new Pipeline({ name: 'ci', tasks: [build] });
 ```
 
 `HubTaskRef` implements `TaskLike` — it participates in the dependency graph, declares its params/workspaces for inference, but produces no `Task` manifest (it references an externally published one).
+
+A `HubTaskRef` is **job-sized**: a whole remote Task, one more pod. For reusable work *inside* a pod, see [Action](#action).
 
 **HubTaskRef options:**
 

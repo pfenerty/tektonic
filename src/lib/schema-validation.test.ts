@@ -18,6 +18,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { App, Chart } from 'cdk8s';
 import { pipelineManifest } from './targets/tekton/tekton-target';
 import { Task } from './core/task';
+import { defineAction } from './core/action';
 import { Pipeline } from './core/pipeline';
 import { gated } from './core/pipeline-task';
 import { onBranchMatching } from './core/condition';
@@ -179,6 +180,28 @@ describe('Tekton v1 schema conformance — Task', () => {
     for (const sidecar of manifest.spec.sidecars as AnyObj[]) {
       assertNoUnknownFields(sidecar, 'v1.Sidecar', 'spec.sidecars[]');
     }
+  });
+
+  it('TaskSpec composing an action conforms to v1.TaskSpec, v1.StepTemplate and v1.Step schema', () => {
+    const report = defineAction<{ target: string }, 'sarif'>({
+      name: 'report',
+      image: 'alpine',
+      outputs: { sarif: 'scan.sarif' },
+      steps: ({ inputs, outputs }) => [
+        { name: 'scan', script: `scan ${inputs.target} > ${outputs.sarif}` },
+      ],
+    })({ target: 'app:1.0' });
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    new Task({ name: 'with-action', steps: [report] }).synth(chart, 'ns');
+    const manifest = chart.toJson()[0] as AnyObj;
+
+    assertNoUnknownFields(manifest.spec as AnyObj, 'v1.TaskSpec', 'spec');
+    assertNoUnknownFields(manifest.spec.stepTemplate as AnyObj, 'v1.StepTemplate', 'spec.stepTemplate');
+    for (const step of manifest.spec.steps as AnyObj[]) {
+      assertNoUnknownFields(step, 'v1.Step', 'spec.steps[]');
+    }
+    expect(manifest.spec.volumes).toEqual([{ name: 'tektonic-actions', emptyDir: {} }]);
   });
 
   it('TaskSpec with volumes conforms to v1.TaskSpec schema', () => {

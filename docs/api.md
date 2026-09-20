@@ -85,9 +85,9 @@ All steps inherit a secure-by-default `stepTemplate` that drops all capabilities
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `name` | `string` | *required* | Task name in manifests |
-| `params` | `Param[]` | `[]` | Parameters accepted by this task. Reporter params are auto-merged — see `statusReporter`. |
+| `params` | `Param[]` | `[]` | Parameters accepted by this task. Reporter and action params are auto-merged — see `statusReporter` and `Action`. |
 | `workspaces` | `Workspace[]` | `[]` | Workspaces required by this task |
-| `steps` | `TaskStepSpec[]` | *required* | Ordered list of steps |
+| `steps` | `(TaskStepSpec \| Action)[]` | *required* | Ordered list of steps. An `Action` expands to one or more steps in this pod and merges its params, workspaces, caches, volumes and results upward. |
 | `needs` | `Task[]` | `[]` | Dependency graph edges |
 | `stepTemplate` | `Record<string, unknown>` | — | Override/extend step template |
 | `statusContext` | `string` | task `name` | Context string reported to the external status system (e.g. `"ci/test"`). Requires `statusReporter`. |
@@ -98,6 +98,61 @@ All steps inherit a secure-by-default `stepTemplate` that drops all capabilities
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `synth(scope, namespace, namePrefix?)` | `void` | Synthesizes the Task resource into a cdk8s scope |
+
+---
+
+### `defineAction`
+
+Defines a reusable, versioned unit of work that renders to steps **inside** a composing task's
+pod — the action half of the job/action split (a `Task` is the unit of scheduling, an action the
+unit of reuse within one). Returns a factory `(inputs, opts?) => Action`.
+
+See [job-libraries.md](job-libraries.md#the-action-layer) for the full guide.
+
+#### `ActionDefinition<In, OutputNames>`
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `name` | `string` | *required* | Stable identifier; also the default instance name |
+| `version` | `string` | — | Version of the action's contract, for pinning |
+| `description` | `string` | — | Human-readable description |
+| `image` | `string` | — | Default image for this action's steps |
+| `outputs` | `Record<OutputNames, string>` | `{}` | Files this action produces, as `logicalName: fileName`. Each becomes an `ActionOutput` at `/tektonic/actions/<instance>-<fileName>`. |
+| `params` | `Param[] \| (inputs) => Param[]` | `[]` | Params merged upward into the composing task |
+| `workspaces` | `Workspace[] \| (inputs) => Workspace[]` | `[]` | Workspaces merged upward |
+| `caches` | `TaskCacheSpec[] \| (inputs) => TaskCacheSpec[]` | `[]` | Caches merged upward |
+| `volumes` | `TaskVolumeSpec[] \| (inputs) => TaskVolumeSpec[]` | `[]` | Volumes merged upward |
+| `results` | `Result[] \| (inputs) => Result[]` | `[]` | Results merged upward |
+| `steps` | `(ctx: ActionCtx) => ActionStepSpec[]` | *required* | Renders the action to steps; `ctx` carries `name`, `inputs`, `outputs`, `image`, `outputDir`. Emitted step names are `<instance>-<step>`, or just the instance name when the step is named after it. |
+
+#### `ActionOptions`
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `name` | `string` | definition `name` | Instance name within the composing task; prefixes its step names |
+| `image` | `string` | definition `image` | Image override for this instance's steps |
+
+#### `Action`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` / `actionName` / `version` | `string` | Instance name, definition name, definition version |
+| `outputs` | `ActionOutputs` | Typed path handles for the declared outputs |
+| `steps` | `TaskStepSpec[]` | Steps this action contributes, name-prefixed and image-resolved |
+| `params` / `workspaces` / `caches` / `volumes` / `results` | arrays | What it contributes to the composing task |
+
+#### `ActionOutput`
+
+A typed handle to a file an action produces inside the pod. `toString()` returns the in-pod
+path, so a downstream step interpolates it directly.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `toResult(result, opts?)` | `Action` | A step copying this output into a Tekton `Result`, failing if it exceeds the 4KB cap. The result is contributed to the task. |
+| `toWorkspace(workspace, dest?, opts?)` | `Action` | A step copying this output into a workspace file (`dest` defaults to the output's file name). The workspace is contributed to the task. |
+
+Both take `{ name?, image? }`: the step name (default `promote-<output>`) and the image the copy
+runs in (default: the producing action's image).
 
 ---
 
