@@ -5,7 +5,6 @@ import { Workspace } from './workspace';
 import type { BackendCtx, CacheBackend } from './cache-backend';
 import type { TaskCacheSpec, TaskStepSpec } from './task';
 import { gcs, DEFAULT_GCS_CACHE_IMAGE } from '../cache/gcs-backend';
-import { DEFAULT_BASE_IMAGE } from '../constants';
 
 /**
  * The worked example from docs/cache-backends.md, kept here so the documented
@@ -62,9 +61,12 @@ class BareBackend implements CacheBackend {
   }
 }
 
+/** What a project sets as `injectedStepImage`; a bare string declares every capability. */
+const PROJECT_IMAGE = 'ghcr.io/example/ci-base:test';
+
 const steps = (t: Task): any[] => {
   const chart = new Chart(new App(), 'test');
-  t.synth(chart, 'ns');
+  t.synth(chart, 'ns', { injectedStepImage: PROJECT_IMAGE });
   return (chart.toJson()[0] as any).spec.steps;
 };
 
@@ -119,18 +121,32 @@ describe('cache step image resolution', () => {
     expect(rendered.find((s) => s.name === 'restore-npm-cache').image).toBe(DEFAULT_S3_CACHE_IMAGE);
   });
 
-  it('falls back to ctx.defaultImage when neither names an image', () => {
+  it("falls back to ctx.defaultImage — the project's injected-step image — when neither names one", () => {
     const rendered = steps(taskWith(new BareBackend()));
-    expect(rendered.find((s) => s.name === 'restore-npm-cache').image).toBe(DEFAULT_BASE_IMAGE);
-    expect(rendered.find((s) => s.name === 'save-npm-cache').image).toBe(DEFAULT_BASE_IMAGE);
+    expect(rendered.find((s) => s.name === 'restore-npm-cache').image).toBe(PROJECT_IMAGE);
+    expect(rendered.find((s) => s.name === 'save-npm-cache').image).toBe(PROJECT_IMAGE);
   });
 });
 
 describe('GcsBackend image default', () => {
-  it('owns DEFAULT_GCS_CACHE_IMAGE rather than reading it off the ctx', () => {
+  it("names no image of its own: it asks the project's for gcloud", () => {
     const rendered = steps(taskWith(gcs({ bucket: 'my-ci-cache' }), { compress: true }));
+    expect(rendered.find((s) => s.name === 'restore-npm-cache').image).toBe(PROJECT_IMAGE);
+    expect(rendered.find((s) => s.name === 'save-npm-cache').image).toBe(PROJECT_IMAGE);
+  });
+
+  it('fails synthesis when the project image does not declare gcloud', () => {
+    const t = taskWith(gcs({ bucket: 'my-ci-cache' }), { compress: true });
+    expect(() =>
+      t.synth(new Chart(new App(), 'test'), 'ns', {
+        injectedStepImage: { image: 'ghcr.io/example/ci-base:test', provides: ['sh', 'git', 'nushell', 'tar', 'zstd'] },
+      }),
+    ).toThrow(/needs an image providing gcloud/);
+  });
+
+  it('DEFAULT_GCS_CACHE_IMAGE is the one-line way back to the old default', () => {
+    const rendered = steps(taskWith(gcs({ bucket: 'my-ci-cache', image: DEFAULT_GCS_CACHE_IMAGE }), { compress: true }));
     expect(rendered.find((s) => s.name === 'restore-npm-cache').image).toBe(DEFAULT_GCS_CACHE_IMAGE);
-    expect(rendered.find((s) => s.name === 'save-npm-cache').image).toBe(DEFAULT_GCS_CACHE_IMAGE);
   });
 
   it('is overridable per backend instance', () => {

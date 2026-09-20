@@ -219,7 +219,7 @@ Extends all [`PipelineOptions`](#pipelineoptions) with:
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `workspace` | `Workspace` | `new Workspace({ name: 'workspace' })` | Shared workspace mounted by all tasks |
-| `cloneImage` | `string` | `'cgr.dev/chainguard/git:latest'` | Container image for the git clone step |
+| `cloneImage` | `string` | the project's `injectedStepImage` | Container image for the git clone step. Must provide `/bin/sh` and `git` |
 
 #### Additional properties
 
@@ -342,7 +342,7 @@ All options are optional.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `image` | `string` | `'cgr.dev/chainguard/curl:latest-dev'` | Image used for status-reporting steps (needs `curl`) |
+| `image` | `string` | the project's `injectedStepImage` | Image used for status-reporting steps. Must provide `nushell` — the POSTs use `http post` — so a project using this reporter names an image that has it (see [injected-step images](#injected-step-images)) |
 | `tokenSecretName` | `string` | `'github-token'` | Name of the Kubernetes Secret containing the GitHub token at key `token` |
 | `repoFullNameParam` | `Param` | `new Param({ name: 'repo-full-name' })` | Param supplying the `owner/repo` value |
 | `revisionParam` | `Param` | `new Param({ name: 'revision' })` | Param supplying the commit SHA |
@@ -417,6 +417,47 @@ cdk8s Chart that generates shared trigger infrastructure: ServiceAccount, RBAC, 
 | `webhookSecretRef` | `{ secretName: string; secretKey: string }` | — | Webhook secret |
 | `urlParam` | `string` | `'url'` | Param name for repo URL |
 | `revisionParam` | `string` | `'revision'` | Param name for git revision |
+
+---
+
+## Injected-step images
+
+Tektonic generates the script for every step it injects — git clone, cache restore/save,
+status reporting, change detection — and ships no image of its own: it only expects the image
+to *provide* the interpreters and CLIs those scripts invoke (`sh`, `git`, `nushell`, `tar`,
+`zstd`, `gcloud`).
+
+Each injected step resolves its image in one order:
+
+1. The step's own — `TaskCacheSpec.image`, `GitPipelineOptions.cloneImage`, a reporter's or
+   cache backend's `image`.
+2. The component's own default, when it has one.
+3. `TektonicProjectOptions.injectedStepImage`.
+4. `DEFAULT_INJECTED_STEP_IMAGE` — a neutral, public image providing `sh` and `git` only.
+
+Because the fallback is deliberately minimal, a feature needing more fails **at synth time**
+with a message naming the capability, rather than at pod-run time with `command not found`:
+
+```ts
+new TektonicProject({
+  // …
+  injectedStepImage: DEFAULT_BASE_IMAGE,                    // an image with all of them
+  // or trusted-with-a-declaration, so the check is real:
+  injectedStepImage: { image: 'ghcr.io/acme/ci-base:1.4.0', provides: ['sh', 'git', 'nushell'] },
+});
+```
+
+A bare string is taken at its word — synthesis is offline and never probes a registry. The
+object form declares what the image actually has, and is checked against what each step asked
+for. Third-party backends and reporters declare their own needs with
+`injectedImageRef('nushell', 'zstd')` instead of hardcoding an image.
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `injectedImageRef(...caps)` | `(...ImageCapability[]) => string` | The image an injected step uses when the caller named none, declaring what it needs |
+| `DEFAULT_INJECTED_STEP_IMAGE` | `InjectedStepImageSpec` | The neutral fallback (`sh`, `git`) |
+| `DEFAULT_BASE_IMAGE` | `string` | An image providing every capability; pass it to `injectedStepImage` |
+| `DEFAULT_GCS_CACHE_IMAGE` | `string` | An image providing the GCS set; pass it to `gcs({ bucket, image })` |
 
 ---
 

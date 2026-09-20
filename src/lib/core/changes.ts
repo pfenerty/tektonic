@@ -5,7 +5,7 @@ import { Result } from "./result";
 import { Workspace } from "./workspace";
 import { Condition, equals } from "./condition";
 import type { WhenClause } from "./condition";
-import { DEFAULT_BASE_IMAGE } from "../constants";
+import { injectedImageRef } from "./injected-image";
 import { sh } from "../script";
 
 /** Default trunk branch that changes are compared against. */
@@ -31,7 +31,7 @@ export interface OnChangesOptions {
      * **open** (the gated job runs).
      */
     base?: string;
-    /** Image providing `git`. Defaults to {@link DEFAULT_BASE_IMAGE}. */
+    /** Image providing `git`. Defaults to the project's `injectedStepImage`. */
     image?: string;
     /**
      * Repository workspace the detection task runs in. Optional under `GitPipeline`
@@ -182,7 +182,7 @@ function buildDetection(opts: OnChangesOptions): Condition {
         steps: [
             {
                 name: "detect",
-                image: opts.image ?? DEFAULT_BASE_IMAGE,
+                image: opts.image ?? injectedImageRef("sh", "git"),
                 script,
             },
         ],

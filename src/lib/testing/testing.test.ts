@@ -108,7 +108,9 @@ describe('synthTask', () => {
       caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], workspace: cacheWs }],
       steps: [{ name: 'build', image: 'node', script: sh`npm run build` }],
     });
-    const view = synthTask(task, { namespace: 'ci' });
+    // The reporter's step resolves to the project's injected-step image, which must declare
+    // the `nushell` its `http post` needs.
+    const view = synthTask(task, { namespace: 'ci', injectedStepImage: 'ghcr.io/example/ci-base:test' });
     expect(view.name).toBe('build');
     expect(view.stepNames).toEqual(['restore-npm-cache', 'build', 'save-npm-cache', 'report-status']);
     expect(view.paramNames).toEqual(expect.arrayContaining(['repo-full-name', 'revision']));

@@ -11,10 +11,14 @@ type AnyObj = Record<string, any>;
 const source = () => new Workspace({ name: 'workspace' });
 const store = () => new Workspace({ name: 'cache' });
 
+// Every cache here is compressed, so the injected steps need nushell/tar/zstd: these tests
+// name a project image the way a project does with `injectedStepImage`.
+const CAPABLE = { injectedStepImage: 'ghcr.io/example/ci-base:test' } as const;
+
 const restoreScript = (t: Task): string => {
   const app = new App();
   const chart = new Chart(app, 'test');
-  t.synth(chart, 'ns');
+  t.synth(chart, 'ns', CAPABLE);
   return (chart.toJson()[0] as AnyObj).spec.steps.find((s: AnyObj) => s.name.startsWith('restore-')).script;
 };
 

@@ -41,17 +41,24 @@ export const RESTRICTED_STEP_SECURITY_CONTEXT = {
 } as const;
 
 /**
- * Default container image for injected steps (cache restore/save, status
- * reporting, git clone).
+ * An image known to provide everything tektonic's injected steps can ask for:
+ * `/bin/sh` + `git` (git-clone, change detection), and `nushell` + `zstd` + `tar`
+ * (compressed caches, status reporting via `http post`).
  *
- * This is a **runtime interpreter expectation, not a module tektonic ships**:
- * the library generates each injected script's interpreter preamble at synth
- * time via the {@link ScriptLanguage} plugins, and the image is only expected
- * to *provide* the interpreters and CLIs those scripts invoke. Concretely the
- * default image must offer `/bin/sh` + `git` (git-clone), `nushell` + `zstd` +
- * `tar` (compressed cache, status reporting via `http post`); the uncompressed
- * cache path needs only `/bin/sh`. Swap in any image that satisfies the subset
- * your pipeline actually uses.
+ * **No longer a default.** Injected steps resolve their image through the project's
+ * `injectedStepImage`, which falls back to {@link DEFAULT_INJECTED_STEP_IMAGE} — a
+ * neutral public image, so installing tektonic never silently pulls from someone else's
+ * registry. This constant stays exported as the one-line way back to the old behaviour:
+ *
+ * ```ts
+ * new TektonicProject({ …, injectedStepImage: DEFAULT_BASE_IMAGE });
+ * ```
+ *
+ * It is a **runtime interpreter expectation, not a module tektonic ships**: the library
+ * generates each injected script's interpreter preamble at synth time via the
+ * {@link ScriptLanguage} plugins, and the image is only expected to *provide* the
+ * interpreters and CLIs those scripts invoke. Any image satisfying the subset your
+ * pipeline actually uses will do.
  */
 export const DEFAULT_BASE_IMAGE =
     "ghcr.io/pfenerty/apko-cicd/base:stable" as const;

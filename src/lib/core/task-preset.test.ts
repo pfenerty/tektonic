@@ -80,7 +80,7 @@ describe('taskPreset', () => {
 
   it('produces a task that synthesizes like any other', () => {
     const task = ciTask({ name: 'test', steps: [{ name: 'test', image: 'go', script: sh`go test ./...` }] });
-    const view = synthTask(task, { namespace: 'ci' });
+    const view = synthTask(task, { namespace: 'ci', injectedStepImage: 'ghcr.io/example/ci-base:test' });
     expect(view.stepNames).toEqual(['test', 'report-status']);
     expect(view.script('test')).toContain('go test ./...');
   });

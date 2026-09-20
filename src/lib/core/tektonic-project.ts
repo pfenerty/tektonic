@@ -7,6 +7,7 @@ import type { ImagePullPolicy } from './task';
 import { Workspace } from './workspace';
 import { DEFAULT_POD_SECURITY_CONTEXT, TEKTON_HOME } from '../constants';
 import type { CacheBackend } from './cache-backend';
+import type { InjectedStepImage } from './injected-image';
 import type { LanguageName } from '../script';
 import { diffPaths } from './spec-diff';
 import type {
@@ -164,6 +165,31 @@ export interface TektonicProjectOptions {
    */
   defaultImagePullPolicy?: ImagePullPolicy;
   /**
+   * Image for the steps tektonic injects — git clone, cache restore/save, status
+   * reporting, change detection. Tektonic ships no image: it generates each injected
+   * script and only expects the image to *provide* what that script invokes.
+   *
+   * Every injected step resolves its image the same way: the step's own
+   * (`TaskCacheSpec.image`, `GitPipelineOptions.cloneImage`, a reporter's or backend's
+   * `image`) → the component's default, when it has one → this → tektonic's neutral
+   * fallback, {@link DEFAULT_INJECTED_STEP_IMAGE}.
+   *
+   * The fallback provides `sh` and `git` only, so features needing more — compressed
+   * caches, GCS caches, the built-in status reporter (`nushell`, `tar`, `zstd`,
+   * `gcloud`) — fail at synth time naming the capability, rather than at pod-run time
+   * with `command not found`. Name an image that has them:
+   *
+   * ```ts
+   * injectedStepImage: DEFAULT_BASE_IMAGE               // the pre-v2.1 default, opted into
+   * injectedStepImage: 'ghcr.io/acme/ci-base:1.4.0'     // trusted for every capability
+   * injectedStepImage: { image: 'ghcr.io/acme/ci-base:1.4.0', provides: ['sh', 'git'] }
+   * ```
+   *
+   * A bare string is taken at its word — synthesis is offline and never probes a
+   * registry. The object form declares what the image actually has, and is checked.
+   */
+  injectedStepImage?: InjectedStepImage;
+  /**
    * Default scripting language for steps whose `script` is a bare body (a
    * `{ language, body }` object or a raw string without a shebang). Individual
    * tasks override via their own `defaultLanguage`; tagged bodies always win.
@@ -306,14 +332,13 @@ export class TektonicProject {
     // each one generates its own git-clone, and a differing cloneDepth used to vanish.
     const renderTask = (task: TaskDef): Record<string, unknown> => {
       const chart = new Chart(new App(), task.name);
-      task.synth(
-        chart,
-        namespace,
-        prefix || undefined,
-        opts.defaultStepSecurityContext,
-        opts.defaultLanguage,
-        opts.defaultImagePullPolicy,
-      );
+      task.synth(chart, namespace, {
+        namePrefix: prefix || undefined,
+        stepSecurityContext: opts.defaultStepSecurityContext,
+        defaultLanguage: opts.defaultLanguage,
+        defaultImagePullPolicy: opts.defaultImagePullPolicy,
+        injectedStepImage: opts.injectedStepImage,
+      });
       return chart.toJson()[0] as Record<string, unknown>;
     };
 

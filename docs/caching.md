@@ -78,7 +78,7 @@ All fields live on `TaskCacheSpec` (the entries in a task's `caches` array):
 | `workspace` | — | PVC for the archive. Required for PVC backend; ignored for GCS |
 | `backend` | PVC | `gcs({ bucket, prefix?, image? })` or any custom `CacheBackend` |
 | `workingDir` | — | Base dir for `key`/`paths`; usually `$(workspaces.workspace.path)` |
-| `image` | backend default | Image for the injected restore/save steps. Falls back to the backend's own default (GCS) or the project default image (PVC) — see [cache-backends.md](cache-backends.md#image-resolution) |
+| `image` | backend default | Image for the injected restore/save steps. Falls back to the backend's own default, then to the project's `injectedStepImage` — see [cache-backends.md](cache-backends.md#image-resolution) |
 | `compress` | `false` | Pack into one `.tar.zst` archive instead of copying file trees |
 | `compressionLevel` | `1` (PVC) / `3` (GCS) | zstd level 1–19 |
 | `multiThreadCompression` | `false` (PVC) / `true` (GCS) | `-T0` (auto threads) vs `-T1` |
@@ -91,7 +91,9 @@ All fields live on `TaskCacheSpec` (the entries in a task's `caches` array):
 
 `compress: true` collapses thousands of small file operations into a single archive
 read/write — a large win on NFS/PVC storage. It requires the step image to provide `tar` with
-`--zstd` and nushell (the default base image does). Lower `compressionLevel` for less CPU/memory;
+`--zstd`, `zstd` and nushell, so the project must name one in `injectedStepImage` (or the cache
+its own `image`): tektonic's neutral fallback provides `sh` and `git` only, and synthesis fails
+naming the missing capability rather than letting the step die in the pod. Lower `compressionLevel` for less CPU/memory;
 level 1 still achieves roughly 2.5× compression with ~1 MB of working memory.
 
 ### `saveStrategy: 'finally'`
