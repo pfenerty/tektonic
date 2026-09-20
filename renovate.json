@@ -11,13 +11,13 @@
     "**/__tests__/**",
     "**/test/**",
     "**/tests/**",
-    "**/__fixtures__/**",
-    ".tektonic/**"
+    "**/__fixtures__/**"
   ],
   "customManagers": [
     {
       "description": [
-        "Image pins live in TypeScript; .tektonic/ is synthesized from it. The Ansible manager matches .tektonic/tasks/*.k8s.yaml by accident of the path, so bumps used to land in the emitted YAML while the source that generates it stayed behind — and the next `tektonic synth` reverted them. .tektonic is ignored above; these are the files that actually own a version.",
+        "Image pins live in TypeScript; .tektonic/ is synthesized from it. Renovate only ever saw the output — the Ansible manager matches any tasks/*.yaml, so .tektonic/tasks/*.k8s.yaml was rewritten by accident of the path while the source that generates it stayed behind, and the next `tektonic synth` would have reverted the bump.",
+        "This manager puts the pins themselves under Renovate. Both sides of a bump land on one branch, so the PR carries the source change and the manifests that follow from it; the check-manifests step in the self-CI test-npm task fails the build if they ever disagree.",
         "config:recommended ignores examples/ by default, which is why ignorePaths is spelled out here without it.",
         "Add a file when it grows a versioned image literal. Unversioned tags (base:stable) are left alone by the leading digit required of currentValue."
       ],

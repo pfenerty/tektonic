@@ -87,12 +87,12 @@ const npmTest = new Task({
         },
         {
             // .tektonic/ is generated from this file, so its image tags are output, not
-            // source: Renovate bumps the pins above and a workflow re-synthesizes on its
-            // branches (renovate.json, .github/workflows/synth-manifests.yml). That leaves
-            // one way for the two to disagree — an edit here that nobody re-synthesized.
-            // `tektonic check` is the guard: it synthesizes into a temp dir and diffs
-            // against what is committed, so the manifests the cluster runs from can never
-            // quietly fall behind the code that describes them.
+            // source — which is exactly how Renovate came to bump the emitted YAML and
+            // leave the pins above behind (see renovate.json). `tektonic check` is the
+            // guard: it synthesizes into a temp dir and diffs against what is committed,
+            // so the manifests the cluster runs from can never quietly fall behind the
+            // code that describes them. Its exit code reaches the reporter like any
+            // other step's, so drift turns the GitHub check red.
             name: "check-manifests",
             image: nodeImage,
             workingDir: "$(workspaces.workspace.path)",
