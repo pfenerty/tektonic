@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { App, Chart } from "cdk8s";
+import { pipelineManifest } from "../targets/tekton/tekton-target";
 import { HubTaskRef } from "./hub-task-ref";
 import { Task } from "./task";
 import { Param } from "./param";
@@ -131,10 +131,7 @@ describe("HubTaskRef in Pipeline", () => {
         expect(pipeline.allTasks).toContain(hubClone);
         expect(pipeline.allTasks).toContain(test);
 
-        const app = new App();
-        const chart = new Chart(app, "test");
-        pipeline._build(chart, "pipeline", "ns");
-        const manifest = chart.toJson()[0] as any;
+        const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
 
         const hubEntry = manifest.spec.tasks.find((t: any) => t.name === "git-clone");
         expect(hubEntry).toBeDefined();

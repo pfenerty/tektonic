@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { App, Chart } from 'cdk8s';
+import { pipelineManifest } from '../targets/tekton/tekton-target';
 import { GitPipeline } from './git-pipeline';
 import { Task, TaskLike } from './task';
 import { Param } from './param';
@@ -70,38 +71,29 @@ describe('GitPipeline', () => {
     expect(test.needs).toHaveLength(0);
   });
 
-  it('_build() adds runAfter git-clone for root tasks', () => {
+  it('pipelineManifest() adds runAfter git-clone for root tasks', () => {
     const ws = new Workspace({ name: 'workspace' });
     const test = makeTask('test');
     const pipeline = new GitPipeline({ name: 'ci', workspace: ws, tasks: [test] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     const testSpec = manifest.spec.tasks.find((t: any) => t.name === 'test');
     expect(testSpec.runAfter).toEqual(['git-clone']);
   });
 
-  it('_build() does not add runAfter git-clone to clone task itself', () => {
+  it('pipelineManifest() does not add runAfter git-clone to clone task itself', () => {
     const ws = new Workspace({ name: 'workspace' });
     const pipeline = new GitPipeline({ name: 'ci', workspace: ws, tasks: [makeTask('test')] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     const cloneSpec = manifest.spec.tasks.find((t: any) => t.name === 'git-clone');
     expect(cloneSpec.runAfter).toBeUndefined();
   });
 
-  it('_build() preserves explicit task.needs for non-root tasks', () => {
+  it('pipelineManifest() preserves explicit task.needs for non-root tasks', () => {
     const ws = new Workspace({ name: 'workspace' });
     const test = makeTask('test');
     const build = makeTask('build', [test]);
     const pipeline = new GitPipeline({ name: 'ci', workspace: ws, tasks: [build] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0];
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as any;
     const buildSpec = manifest.spec.tasks.find((t: any) => t.name === 'build');
     // build should runAfter test only; git-clone is transitively required through test
     expect(buildSpec.runAfter).toEqual(['test']);
@@ -310,18 +302,12 @@ describe('GitPipeline', () => {
     const prPipeline = new GitPipeline({ name: 'pr', workspace: ws, tasks: [shared] });
 
     // Push pipeline build
-    const pushApp = new App();
-    const pushChart = new Chart(pushApp, 'push');
-    pushPipeline._build(pushChart, 'pipeline', 'ns');
-    const pushManifest = pushChart.toJson()[0];
+    const pushManifest = pipelineManifest(pushPipeline, { namespace: 'ns' }) as any;
     const pushShared = pushManifest.spec.tasks.find((t: any) => t.name === 'shared');
     expect(pushShared.runAfter).toEqual(['git-clone']);
 
     // PR pipeline build
-    const prApp = new App();
-    const prChart = new Chart(prApp, 'pr');
-    prPipeline._build(prChart, 'pipeline', 'ns');
-    const prManifest = prChart.toJson()[0];
+    const prManifest = pipelineManifest(prPipeline, { namespace: 'ns' }) as any;
     const prShared = prManifest.spec.tasks.find((t: any) => t.name === 'shared');
     expect(prShared.runAfter).toEqual(['git-clone']);
   });

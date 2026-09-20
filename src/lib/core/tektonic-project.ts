@@ -1,16 +1,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { App, ApiObject, Chart } from 'cdk8s';
+import { App, Chart } from 'cdk8s';
 import { Pipeline } from './pipeline';
 import { TaskLike, TaskDef } from './task';
 import type { ImagePullPolicy } from './task';
 import { Workspace } from './workspace';
-import { triggerAnnotations } from './pac-trigger';
-import { TEKTON_API_V1, PAC_API, DEFAULT_POD_SECURITY_CONTEXT } from '../constants';
+import { DEFAULT_POD_SECURITY_CONTEXT, TEKTON_HOME } from '../constants';
 import type { CacheBackend } from './cache-backend';
 import type { LanguageName } from '../script';
 import { diffPaths } from './spec-diff';
-import { PAC_PARAM_BINDINGS, PAC_INJECTED_PARAMS, PAC_EVENT_ENV, TEKTON_HOME } from './pac-params';
+import type {
+  BuiltPipeline,
+  BuiltTask,
+  PodEnvVar,
+  SynthModel,
+  SynthTarget,
+} from './synth-target';
+import { PacTarget } from '../targets/pac/pac-target';
+import type { RepositoryConfig } from '../targets/pac/pac-target';
 
 /**
  * Environment variables the `tektonic` CLI sets on the process that runs a project entrypoint.
@@ -71,12 +78,12 @@ function graphNodes(specs: unknown): GraphNode[] {
 }
 
 /**
- * Specifies a persistent cache volume bound into every PipelineRun. The generated
- * PVC persists across runs so tools can reuse cached data (a vulnerability database,
- * dependencies, build artifacts).
+ * Specifies a persistent cache volume bound into every run. The generated PVC persists
+ * across runs so tools can reuse cached data (a vulnerability database, dependencies,
+ * build artifacts).
  */
 export interface CacheSpec {
-  /** The workspace bound to the persistent volume across PipelineRuns. */
+  /** The workspace bound to the persistent volume across runs. */
   workspace: Workspace;
   /** PVC storage size. Defaults to `'1Gi'`. */
   storageSize?: string;
@@ -96,48 +103,22 @@ export interface CacheSpec {
   backend?: CacheBackend;
 }
 
-/**
- * Git provider configuration for a generated PAC {@link RepositoryConfig}. Omit
- * entirely when PAC is installed as a GitHub App (URL matching is sufficient).
- */
-export interface RepositoryGitProvider {
-  /** Provider type, e.g. `'github'`, `'gitlab'`, `'bitbucket-cloud'`, `'gitea'`. */
-  type?: 'github' | 'gitlab' | 'bitbucket-cloud' | 'gitea';
-  /** Name of the Secret holding the provider API token. */
-  secretName?: string;
-  /** Key within the token Secret. Defaults to `'token'`. */
-  secretKey?: string;
-  /** Name of the Secret holding the webhook secret (for webhook-based installs). */
-  webhookSecretName?: string;
-  /** Key within the webhook Secret. Defaults to `'webhook.secret'`. */
-  webhookSecretKey?: string;
-  /** API base URL for self-hosted providers (e.g. GitHub Enterprise, self-hosted GitLab). */
-  apiUrl?: string;
-}
-
-/** Options for generating a PAC `Repository` custom resource. */
-export interface RepositoryConfig {
-  /** Repository URL PAC matches incoming events against (`spec.url`). */
-  url: string;
-  /** Optional git-provider block. Omit for GitHub-App installs. */
-  gitProvider?: RepositoryGitProvider;
-}
-
-// Well-known pipeline params bound to PAC template variables
 /** Options for {@link TektonicProject}. */
 export interface TektonicProjectOptions {
   /**
    * Generate a PAC `Repository` custom resource linking this repo to the namespace
    * (and, optionally, a git provider). Omit to manage the `Repository` yourself.
+   *
+   * Configures the default {@link PacTarget}; ignored when {@link targets} replaces it.
    */
   repository?: RepositoryConfig;
   /** Optional name prefix applied to all generated resource names. */
   name?: string;
-  /** Kubernetes namespace for task and PipelineRun resources. */
+  /** Kubernetes namespace for task and run resources. */
   namespace: string;
-  /** Pipelines to synthesize. Only pipelines with triggers are emitted. */
+  /** Pipelines to synthesize. */
   pipelines: Pipeline[];
-  /** Persistent cache volumes to bind in every PipelineRun. */
+  /** Persistent cache volumes to bind in every run. */
   caches?: CacheSpec[];
   /**
    * Output directory for synthesized YAML files. Defaults to `".tekton"`.
@@ -149,6 +130,8 @@ export interface TektonicProjectOptions {
    * Set this when `outdir` is not a repo-relative path
    * (e.g. `outdir: "../../.tekton"`, `repoRelativePath: ".tekton"`).
    * Defaults to `outdir`.
+   *
+   * Configures the default {@link PacTarget}; ignored when {@link targets} replaces it.
    */
   repoRelativePath?: string;
   /** PVC storage size for the per-run ephemeral workspace. Defaults to `"1Gi"`. */
@@ -159,7 +142,7 @@ export interface TektonicProjectOptions {
   workspaceAccessModes?: string[];
   /**
    * Pod-level security context merged on top of `DEFAULT_POD_SECURITY_CONTEXT`
-   * for every PipelineRun pod.
+   * for every run pod.
    */
   defaultPodSecurityContext?: Record<string, unknown>;
   /**
@@ -186,16 +169,18 @@ export interface TektonicProjectOptions {
    * tasks override via their own `defaultLanguage`; tagged bodies always win.
    */
   defaultLanguage?: LanguageName;
-  /** Service account name for PipelineRun pods. Defaults to `"tekton-triggers"`. */
+  /** Service account name for run pods. Defaults to `"tekton-triggers"`. */
   serviceAccountName?: string;
   /**
    * Maximum number of completed PipelineRuns to retain per repository.
    * PAC deletes older runs once this limit is exceeded. Defaults to `5`.
+   *
+   * Configures the default {@link PacTarget}; ignored when {@link targets} replaces it.
    */
   maxKeepRuns?: number;
   /**
    * Additional environment variables injected into every step of every task via
-   * `taskRunTemplate.podTemplate.env`. Applied to all TaskRun pods in all PipelineRuns.
+   * `taskRunTemplate.podTemplate.env`. Applied to all TaskRun pods in all runs.
    *
    * PAC template variables (e.g. `{{ git_auth_secret }}`) in `valueFrom.secretKeyRef.name`
    * are substituted by PAC before the PipelineRun is submitted to Kubernetes, so they
@@ -209,10 +194,10 @@ export interface TektonicProjectOptions {
    * }]
    * ```
    */
-  podTemplateEnv?: Array<{ name: string; value?: string; valueFrom?: Record<string, unknown> }>;
+  podTemplateEnv?: PodEnvVar[];
   /**
    * Inject the PAC event context — event type, branches, revision, repo — into every step as
-   * environment variables under the stable names in {@link PAC_EVENT_ENV}.
+   * environment variables, under the stable names the PAC target defines.
    *
    * Use it where the *event* rather than the code decides what a step does: a scan that runs
    * diff-scoped on a pull request and full on a push, for instance. Without it, that meant
@@ -220,28 +205,36 @@ export interface TektonicProjectOptions {
    * and that `podTemplateEnv` is where they go. An entry of the same name in
    * `podTemplateEnv` wins.
    *
-   * Defaults to `false`.
+   * Defaults to `false`. Configures the default {@link PacTarget}; ignored when
+   * {@link targets} replaces it.
    */
   pacEventContext?: boolean;
   /**
-   * Annotations merged into every generated PipelineRun's metadata, alongside the
-   * PAC annotations. Use for Tekton Chains controls such as
-   * `chains.tekton.dev/transparency-upload`.
+   * Annotations merged into every generated run's metadata, alongside the target's own.
+   * Use for Tekton Chains controls such as `chains.tekton.dev/transparency-upload`.
    */
   pipelineRunAnnotations?: Record<string, string>;
+  /**
+   * Synthesis targets that emit this project. Defaults to a single {@link PacTarget}
+   * configured from the PAC options above.
+   *
+   * Passing this **replaces** the default target, so include a `new PacTarget({ … })` of
+   * your own to keep emitting PAC alongside anything else. Targets share the outdir and own
+   * the file names they write.
+   */
+  targets?: SynthTarget[];
 }
 
 /**
- * Synthesizes a Tektonic project to Tekton [Pipelines as Code](https://pipelinesascode.tekton.dev/)
- * (PAC) YAML — the single Tektonic synthesizer.
+ * Synthesizes a Tektonic project: builds the provider-neutral {@link SynthModel} — pipeline
+ * specs, task manifests, workspace bindings, run defaults — and hands it to each
+ * {@link SynthTarget} to emit.
  *
- * It generates:
- * - PAC-annotated `PipelineRun` templates in `<outdir>/` (one per triggered pipeline)
- * - `Task` YAML files in `<outdir>/tasks/` (one per unique task)
- * - an optional `Repository` custom resource (when {@link RepositoryConfig | repository} is set)
- *
- * PAC reads these files directly from the pushed commit's SHA at runtime, so the
- * pipeline definition is always exactly what was committed — no Flux sync race.
+ * The default target is {@link PacTarget}, which writes Tekton Pipelines as Code YAML: a PAC-annotated
+ * `PipelineRun` template per triggered pipeline in `<outdir>/`, one `Task` file per unique
+ * task in `<outdir>/tasks/`, and an optional `Repository` custom resource. Pass
+ * {@link TektonicProjectOptions.targets | targets} to emit something else — plain Tekton via
+ * `TektonTarget`, or any third-party target.
  *
  * @example
  * ```ts
@@ -260,28 +253,42 @@ export interface TektonicProjectOptions {
  * ```
  */
 export class TektonicProject {
+  /** The provider-neutral model handed to every target. */
+  readonly model: SynthModel;
+  /** The targets that emitted this project, in the order they ran. */
+  readonly targets: SynthTarget[];
+
   constructor(opts: TektonicProjectOptions) {
     // The declared outdir stays the source of truth for `repoRelativePath`: a redirected
     // synthesis must emit byte-identical YAML, or a drift check would compare against
     // annotations that name the temp directory.
     const declaredOutdir = opts.outdir ?? '.tekton';
     const outdir = redirectedOutdir(declaredOutdir);
-    const repoRelativePath = opts.repoRelativePath ?? declaredOutdir;
     const prefix = opts.name ?? '';
     const namespace = opts.namespace;
-    const serviceAccountName = opts.serviceAccountName ?? 'tekton-triggers';
-    const maxKeepRuns = opts.maxKeepRuns ?? 5;
+
+    this.targets = opts.targets ?? [
+      new PacTarget({
+        repository: opts.repository,
+        repoRelativePath: opts.repoRelativePath ?? declaredOutdir,
+        maxKeepRuns: opts.maxKeepRuns,
+        eventContext: opts.pacEventContext,
+      }),
+    ];
+    if (opts.targets) warnUnusedPacOptions(opts, this.targets);
 
     const podSecurityContext = {
       ...DEFAULT_POD_SECURITY_CONTEXT,
       ...(opts.defaultPodSecurityContext ?? {}),
     };
 
+    // Env comes from three places, in precedence order: the project's own entries win over
+    // anything a target contributes, and HOME is the framework's last-resort default.
     const podTemplateEnv = [...(opts.podTemplateEnv ?? [])];
     const hasEnv = (name: string): boolean => podTemplateEnv.some(e => e.name === name);
-    if (opts.pacEventContext) {
-      for (const [name, value] of Object.entries(PAC_EVENT_ENV)) {
-        if (!hasEnv(name)) podTemplateEnv.push({ name, value });
+    for (const target of this.targets) {
+      for (const entry of target.injectedEnv ?? []) {
+        if (!hasEnv(entry.name)) podTemplateEnv.push(entry);
       }
     }
     // A pod-level runAsUser (set by default) normally has no /etc/passwd entry, so $HOME
@@ -297,16 +304,16 @@ export class TektonicProject {
     // name — so two distinct tasks sharing a name must declare the same thing, or one
     // pipeline would run a manifest it never declared. GitPipeline makes this easy to hit:
     // each one generates its own git-clone, and a differing cloneDepth used to vanish.
-    const synthArgs = [
-      namespace,
-      prefix || undefined,
-      opts.defaultStepSecurityContext,
-      opts.defaultLanguage,
-      opts.defaultImagePullPolicy,
-    ] as const;
-    const specOf = (task: TaskDef): Record<string, unknown> => {
+    const renderTask = (task: TaskDef): Record<string, unknown> => {
       const chart = new Chart(new App(), task.name);
-      task.synth(chart, ...synthArgs);
+      task.synth(
+        chart,
+        namespace,
+        prefix || undefined,
+        opts.defaultStepSecurityContext,
+        opts.defaultLanguage,
+        opts.defaultImagePullPolicy,
+      );
       return chart.toJson()[0] as Record<string, unknown>;
     };
 
@@ -323,7 +330,7 @@ export class TektonicProject {
         }
         if (existing === task) continue;
         if (!(existing instanceof TaskDef) || !(task instanceof TaskDef)) continue;
-        const differences = diffPaths(specOf(existing), specOf(task));
+        const differences = diffPaths(renderTask(existing), renderTask(task));
         if (differences.length === 0) continue;
         const emittedName = prefix ? `${prefix}-${task.name}` : task.name;
         throw new Error(
@@ -336,64 +343,32 @@ export class TektonicProject {
       }
     }
 
-    // 2. Synthesize Task YAML to <outdir>/tasks/
-    const taskApp = new App({ outdir: `${outdir}/tasks` });
+    // 2. Render each unique task once. A TaskLike that is not a TaskDef (a HubTaskRef, say)
+    //    resolves to a task someone else published, so there is nothing to emit for it.
+    const tasks: BuiltTask[] = [];
     for (const [name, task] of uniqueTasks) {
       if (!(task instanceof TaskDef)) continue;
-      const chart = new Chart(taskApp, name);
-      task.synth(
-        chart,
-        namespace,
-        prefix || undefined,
-        opts.defaultStepSecurityContext,
-        opts.defaultLanguage,
-        opts.defaultImagePullPolicy,
-      );
-    }
-    taskApp.synth();
-
-    // 3. Build task annotation: references to all synthesized task files
-    const synthTaskNames = [...uniqueTasks.entries()]
-      .filter(([, t]) => t instanceof TaskDef)
-      .map(([name]) => {
-        // The chart ID used above is the bare task name; cdk8s suffixes .k8s.yaml
-        const fileName = `${name}.k8s.yaml`;
-        return `${repoRelativePath}/tasks/${fileName}`;
+      tasks.push({
+        name,
+        resourceName: prefix ? `${prefix}-${name}` : name,
+        manifest: renderTask(task),
       });
-    const taskAnnotation = synthTaskNames.length > 0
-      ? `[${synthTaskNames.join(', ')}]`
-      : undefined;
+    }
 
-    // 4. Synthesize a PAC PipelineRun template per triggered pipeline
-    const runApp = new App({ outdir });
-    const graph: PipelineGraph[] = [];
-    for (const pipeline of opts.pipelines) {
-      if (!pipeline.trigger || pipeline.events.length === 0) continue;
-
-      // PAC firing annotations (on-event/on-target-branch, or on-cel-expression + comment/label/cancel).
-      const matchAnnotations = triggerAnnotations(pipeline.trigger);
-
-      // Build the inlined pipeline spec (with auto-injected project-name / repo-full-name params)
-      const pipelineSpec = pipeline._buildSpec(
-        PAC_INJECTED_PARAMS.map(p => p.toSpec()),
-        prefix || undefined,
-      );
-
-      // Bind all pipelineSpec params to PAC template variables
-      const specParams = pipelineSpec.params as Array<{ name: string }>;
-      const pipelineRunParams = specParams.map(p => ({
-        name: p.name,
-        value: PAC_PARAM_BINDINGS[p.name] ?? '',
-      }));
+    // 3. Build one spec per pipeline, with every target's injected params declared on it.
+    const injectedParams = dedupeByName(this.targets.flatMap(t => t.injectedParams ?? [])).map(p =>
+      p.toSpec(),
+    );
+    const cacheWorkspaceNames = new Set(pvcCaches.map(c => c.workspace.name));
+    const pipelines: BuiltPipeline[] = opts.pipelines.map(pipeline => {
+      const spec = pipeline._buildSpec(injectedParams, prefix || undefined);
 
       // Workspace bindings: cache workspaces → PVCs, all others → ephemeral volumeClaimTemplate
-      const cacheWorkspaceNames = new Set(pvcCaches.map(c => c.workspace.name));
-      const specWorkspaces = pipelineSpec.workspaces as Array<{ name: string }>;
-      const workspaces = specWorkspaces.map(w => {
+      const specWorkspaces = (spec.workspaces ?? []) as Array<{ name: string }>;
+      const workspaceBindings = specWorkspaces.map(w => {
         if (cacheWorkspaceNames.has(w.name)) {
           const cacheSpec = pvcCaches.find(c => c.workspace.name === w.name)!;
-          const claimName = cacheSpec.claimName
-            ?? (prefix ? `${prefix}-${w.name}` : w.name);
+          const claimName = cacheSpec.claimName ?? (prefix ? `${prefix}-${w.name}` : w.name);
           return { name: w.name, persistentVolumeClaim: { claimName } };
         }
         return {
@@ -401,94 +376,91 @@ export class TektonicProject {
           volumeClaimTemplate: {
             spec: {
               accessModes: opts.workspaceAccessModes ?? ['ReadWriteOnce'],
-              ...(opts.workspaceStorageClass ? { storageClassName: opts.workspaceStorageClass } : {}),
+              ...(opts.workspaceStorageClass
+                ? { storageClassName: opts.workspaceStorageClass }
+                : {}),
               resources: { requests: { storage: opts.workspaceStorageSize ?? '1Gi' } },
             },
           },
         };
       });
 
-      graph.push({
+      return {
         name: pipeline.name,
-        events: [...pipeline.events],
+        resourceName: prefix ? `${prefix}-${pipeline.name}` : pipeline.name,
+        spec,
         ...(pipeline.timeout ? { timeout: pipeline.timeout } : {}),
-        tasks: graphNodes(pipelineSpec.tasks),
-        finally: graphNodes(pipelineSpec.finally),
-      });
+        events: [...pipeline.events],
+        ...(pipeline.trigger ? { trigger: pipeline.trigger } : {}),
+        workspaceBindings,
+      };
+    });
 
-      const pipelineRunName = prefix ? `${prefix}-${pipeline.name}` : pipeline.name;
-      const chartId = prefix ? `${prefix}-${pipeline.name}` : pipeline.name;
+    this.model = {
+      ...(prefix ? { name: prefix } : {}),
+      namespace,
+      pipelines,
+      tasks,
+      defaults: {
+        serviceAccountName: opts.serviceAccountName ?? 'tekton-triggers',
+        podSecurityContext,
+        podTemplateEnv,
+        runAnnotations: opts.pipelineRunAnnotations ?? {},
+      },
+    };
 
-      const chart = new Chart(runApp, chartId);
-      new ApiObject(chart, 'pipelinerun', {
-        apiVersion: TEKTON_API_V1,
-        kind: 'PipelineRun',
-        metadata: {
-          name: pipelineRunName,
-          annotations: {
-            ...matchAnnotations,
-            ...(taskAnnotation ? { 'pipelinesascode.tekton.dev/task': taskAnnotation } : {}),
-            'pipelinesascode.tekton.dev/max-keep-runs': String(maxKeepRuns),
-            ...(opts.pipelineRunAnnotations ?? {}),
-          },
-        },
-        spec: {
-          pipelineSpec,
-          ...(pipeline.timeout ? { timeouts: { pipeline: pipeline.timeout } } : {}),
-          params: pipelineRunParams,
-          taskRunTemplate: {
-            serviceAccountName,
-            podTemplate: {
-              securityContext: podSecurityContext,
-              ...(podTemplateEnv.length > 0 ? { env: podTemplateEnv } : {}),
-            },
-          },
-          workspaces,
-        },
-      });
-    }
-
+    // 4. The CLI's drift/graph manifests are a CLI concern, not a target's — every target
+    //    would otherwise reimplement them.
     const graphManifest = process.env[CLI_ENV.graphManifest];
     if (graphManifest) {
+      const graph: PipelineGraph[] = pipelines
+        .filter(p => p.trigger && p.events.length > 0)
+        .map(p => ({
+          name: p.name,
+          events: [...p.events],
+          ...(p.timeout ? { timeout: p.timeout } : {}),
+          tasks: graphNodes(p.spec.tasks),
+          finally: graphNodes(p.spec.finally),
+        }));
       fs.appendFileSync(
         graphManifest,
         `${JSON.stringify({ project: prefix || undefined, outdir: declaredOutdir, pipelines: graph })}\n`,
       );
     }
 
-    // Optional PAC Repository CR linking this repo to the namespace (+ provider).
-    if (opts.repository) {
-      const repoName = prefix || opts.repository.url.replace(/^.*\//, '') || 'repository';
-      const gp = opts.repository.gitProvider;
-      const gitProvider = gp
-        ? {
-            ...(gp.type ? { type: gp.type } : {}),
-            ...(gp.apiUrl ? { url: gp.apiUrl } : {}),
-            ...(gp.secretName
-              ? { secret: { name: gp.secretName, key: gp.secretKey ?? 'token' } }
-              : {}),
-            ...(gp.webhookSecretName
-              ? {
-                  webhook_secret: {
-                    name: gp.webhookSecretName,
-                    key: gp.webhookSecretKey ?? 'webhook.secret',
-                  },
-                }
-              : {}),
-          }
-        : undefined;
-      const repoChart = new Chart(runApp, `${repoName}-repository`);
-      new ApiObject(repoChart, 'repository', {
-        apiVersion: PAC_API,
-        kind: 'Repository',
-        metadata: { name: repoName, namespace },
-        spec: {
-          url: opts.repository.url,
-          ...(gitProvider ? { git_provider: gitProvider } : {}),
-        },
-      });
-    }
-
-    runApp.synth();
+    for (const target of this.targets) target.emit(this.model, outdir);
   }
+}
+
+/** First occurrence of each name, preserving order. */
+function dedupeByName<T extends { name: string }>(items: T[]): T[] {
+  const seen = new Map<string, T>();
+  for (const item of items) if (!seen.has(item.name)) seen.set(item.name, item);
+  return [...seen.values()];
+}
+
+/**
+ * Warns when a PAC-only option is set but no PAC target is emitting — the option would
+ * silently do nothing, and a `Repository` CR quietly not being written is the kind of thing
+ * you find out about from the cluster.
+ */
+function warnUnusedPacOptions(opts: TektonicProjectOptions, targets: SynthTarget[]): void {
+  if (targets.some(t => t instanceof PacTarget)) return;
+  const unused = (
+    [
+      ['repository', opts.repository],
+      ['repoRelativePath', opts.repoRelativePath],
+      ['maxKeepRuns', opts.maxKeepRuns],
+      ['pacEventContext', opts.pacEventContext],
+    ] as const
+  )
+    .filter(([, value]) => value !== undefined)
+    .map(([name]) => name);
+  if (unused.length === 0) return;
+  // eslint-disable-next-line no-console
+  console.warn(
+    `tektonic: ${unused.join(', ')} configure the default PAC target, but 'targets' replaced it ` +
+      `with [${targets.map(t => t.name).join(', ')}] — pass 'new PacTarget({ … })' in 'targets' ` +
+      `to keep emitting PAC.`,
+  );
 }

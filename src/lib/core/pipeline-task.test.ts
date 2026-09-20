@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { App, Chart } from 'cdk8s';
+import { pipelineManifest } from '../targets/tekton/tekton-target';
 import { Pipeline } from './pipeline';
 import { Task } from './task';
 import { Result } from './result';
@@ -19,10 +19,7 @@ describe('gated()', () => {
   it('emits when clause in pipeline task spec', () => {
     const gatedBuild = gated(build, { when: whenExpr });
     const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.when).toEqual(whenExpr);
@@ -30,10 +27,7 @@ describe('gated()', () => {
 
   it('plain tasks have no when clause', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [clone, build] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.when).toBeUndefined();
@@ -51,10 +45,7 @@ describe('gated()', () => {
   it('preserves runAfter ordering for wrapped task', () => {
     const gatedBuild = gated(build, { when: whenExpr });
     const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.runAfter).toContain('clone');
@@ -63,10 +54,7 @@ describe('gated()', () => {
   it('omits when from spec when overrides.when is empty', () => {
     const gatedBuild = gated(build, { when: [] });
     const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.when).toBeUndefined();
@@ -75,10 +63,7 @@ describe('gated()', () => {
   it('emits retries in pipeline task spec', () => {
     const gatedBuild = gated(build, { retries: 3 });
     const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.retries).toBe(3);
@@ -87,10 +72,7 @@ describe('gated()', () => {
   it('emits timeout in pipeline task spec', () => {
     const gatedBuild = gated(build, { timeout: '30m' });
     const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.timeout).toBe('30m');
@@ -98,10 +80,7 @@ describe('gated()', () => {
 
   it('plain tasks have no retries or timeout', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [clone, build] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.retries).toBeUndefined();
@@ -115,10 +94,7 @@ describe('gated()', () => {
       timeout: '1h',
     });
     const pipeline = new Pipeline({ name: 'ci', tasks: [clone, gatedBuild] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const manifest = chart.toJson()[0] as AnyObj;
+    const manifest = pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj;
 
     const buildEntry = (manifest.spec.tasks as AnyObj[]).find(t => t.name === 'build');
     expect(buildEntry?.when).toEqual(whenExpr);
@@ -137,12 +113,8 @@ describe('gated() identity', () => {
     return { clone, test, integration };
   };
 
-  const specOf = (pipeline: Pipeline) => {
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    return (chart.toJson()[0] as AnyObj).spec;
-  };
+  const specOf = (pipeline: Pipeline) =>
+    (pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj).spec;
 
   const goWhen = [{ input: '$(params.changed)', operator: 'in' as const, values: ['go'] }];
 
@@ -214,10 +186,7 @@ describe('gated() condition sources', () => {
     const pipeline = new Pipeline({ name: 'ci', tasks: [gated(build, { when: cond })] });
     expect(pipeline.allTasks).toContain(detect);
 
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const tasks = (chart.toJson()[0] as AnyObj).spec.tasks as AnyObj[];
+    const tasks = (pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj).spec.tasks as AnyObj[];
     expect(tasks.map(t => t.name)).toContain('detect-changes');
     expect(tasks.find(t => t.name === 'build')?.runAfter).toEqual(['detect-changes']);
   });
@@ -226,10 +195,7 @@ describe('gated() condition sources', () => {
     const { detect, cond } = detected();
     const build = new Task({ name: 'build', needs: [detect], steps: [{ name: 'build', image: 'node' }] });
     const pipeline = new Pipeline({ name: 'ci', tasks: [gated(build, { when: cond })] });
-    const app = new App();
-    const chart = new Chart(app, 'test');
-    pipeline._build(chart, 'pipeline', 'ns');
-    const tasks = (chart.toJson()[0] as AnyObj).spec.tasks as AnyObj[];
+    const tasks = (pipelineManifest(pipeline, { namespace: 'ns' }) as AnyObj).spec.tasks as AnyObj[];
     expect(tasks.find(t => t.name === 'build')?.runAfter).toEqual(['detect-changes']);
   });
 
