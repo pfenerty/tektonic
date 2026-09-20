@@ -14,23 +14,149 @@ export { Bash } from './bash';
 export { Nushell } from './nushell';
 export { Python } from './python';
 
-/** Names of the built-in script languages. */
-export type LanguageName = 'sh' | 'bash' | 'nushell' | 'python';
+/** Names of the languages tektonic ships, kept as a union so they still autocomplete. */
+export type KnownLanguageName = 'sh' | 'bash' | 'nushell' | 'python';
 
-const LANGUAGES: Record<LanguageName, ScriptLanguage> = {
-  sh: new Sh(),
-  bash: new Bash(),
-  nushell: new Nushell(),
-  python: new Python(),
-};
+/**
+ * The name of a registered script language.
+ *
+ * Widened to `string` so a language registered by another package is nameable wherever a
+ * built-in is — `defaultLanguage`, the `{ language, body }` object form, `scriptFromFile`'s
+ * override. The `string & {}` arm is what stops TypeScript collapsing the union to plain
+ * `string`, so `'nushell'` still autocompletes and `'nushel'` still gets flagged by review
+ * tooling even though an arbitrary name type-checks.
+ */
+export type LanguageName = KnownLanguageName | (string & {});
 
-/** Resolves a language name to its plugin, throwing on an unknown name. */
-export function languageFor(name: LanguageName): ScriptLanguage {
-  const lang = LANGUAGES[name];
-  if (!lang) {
-    throw new Error(`Unknown script language "${name}" (expected one of ${Object.keys(LANGUAGES).join(', ')})`);
+/** The tagged-template function {@link registerLanguage} hands back, e.g. `sh` or `nu`. */
+export type ScriptTag = (strings: TemplateStringsArray, ...values: unknown[]) => Script;
+
+/** Options for {@link registerLanguage}. */
+export interface RegisterLanguageOptions {
+  /**
+   * File extensions this language claims, for {@link scriptFromFile} and `tektonic lint`.
+   * A leading dot is optional and matching is case-insensitive (`'ts'` and `'.TS'` are the
+   * same claim).
+   */
+  extensions?: string[];
+}
+
+interface Registration {
+  language: ScriptLanguage;
+  extensions: string[];
+}
+
+/** Registered languages, keyed by {@link ScriptLanguage.name}. */
+const LANGUAGES = new Map<string, Registration>();
+/** Claimed file extension (lower-case, dot-prefixed) → language name. */
+const EXTENSIONS = new Map<string, string>();
+
+function normalizeExtension(ext: string): string {
+  const lower = ext.trim().toLowerCase();
+  return lower.startsWith('.') ? lower : `.${lower}`;
+}
+
+/**
+ * Registers a {@link ScriptLanguage} and returns its tagged-template helper.
+ *
+ * Registration and use are one step, so a language reaches every ergonomic the built-ins
+ * have — the tag, `languageFor`, the `{ language, body }` object form, `defaultLanguage`,
+ * `scriptFromFile` and `tektonic lint` — without the core knowing it exists:
+ *
+ * ```ts
+ * export const deno = registerLanguage(new DenoLanguage(), { extensions: ['.ts'] });
+ * // then: script: deno`console.log("hi")`
+ * ```
+ *
+ * The returned tag keeps call sites type-safe without a stringly-typed name; the name is
+ * still needed for the paths where a string genuinely is the input (a file extension, a
+ * project-level `defaultLanguage`), and {@link languageFor} resolves those.
+ *
+ * One thing a language may not opt out of is the exit-code contract: a `wrap` that ignores
+ * {@link ScriptCtx.captureExitCode} reports a failed step as green. Prove compliance with
+ * `assertExitCodeContract` from `@pfenerty/tektonic/testing`.
+ *
+ * @throws if the name is empty, or already registered — silently overriding a language
+ * would change every body that uses it, at a distance.
+ */
+export function registerLanguage(
+  language: ScriptLanguage,
+  opts: RegisterLanguageOptions = {},
+): ScriptTag {
+  const name = language.name;
+  // Registered under the name verbatim, so `languageFor(lang.name)` always finds it back —
+  // which a surrounding-whitespace name would quietly break.
+  if (!name?.trim() || name !== name.trim()) {
+    throw new Error(
+      `tektonic: a ScriptLanguage needs a non-empty \`name\` with no surrounding whitespace ` +
+        `to be registered (got ${JSON.stringify(language.name)})`,
+    );
   }
-  return lang;
+  if (LANGUAGES.has(name)) {
+    throw new Error(
+      `tektonic: script language "${name}" is already registered. Overriding it would change ` +
+        `every body that uses the name, so registration refuses: pick a distinct name, or ` +
+        `check whether two copies of the same package are installed.`,
+    );
+  }
+  const extensions = (opts.extensions ?? []).map(normalizeExtension);
+  LANGUAGES.set(name, { language, extensions });
+  for (const ext of extensions) {
+    const owner = EXTENSIONS.get(ext);
+    if (owner && owner !== name) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `tektonic: file extension "${ext}" was claimed by script language "${owner}" and is ` +
+          `now claimed by "${name}" — scriptFromFile and \`tektonic lint\` will read these ` +
+          `files as "${name}". Register a distinct extension, or pass an explicit language.`,
+      );
+    }
+    EXTENSIONS.set(ext, name);
+  }
+  return tag(language);
+}
+
+/**
+ * Removes a registered language and the extensions it currently owns, returning whether
+ * anything was removed.
+ *
+ * Registration is module-global and permanent by design; this exists so a test that
+ * registers a throwaway language can clean up after itself.
+ */
+export function unregisterLanguage(name: string): boolean {
+  const reg = LANGUAGES.get(name);
+  if (!reg) return false;
+  LANGUAGES.delete(name);
+  for (const ext of reg.extensions) {
+    if (EXTENSIONS.get(ext) === name) EXTENSIONS.delete(ext);
+  }
+  return true;
+}
+
+/** Resolves a language name to its plugin, throwing on an unregistered name. */
+export function languageFor(name: LanguageName): ScriptLanguage {
+  const reg = LANGUAGES.get(name);
+  if (!reg) {
+    throw new Error(
+      `Unknown script language "${name}" (expected one of ${registeredLanguageNames().join(', ')})`,
+    );
+  }
+  return reg.language;
+}
+
+/** Names of every registered language, in registration order. */
+export function registeredLanguageNames(): string[] {
+  return [...LANGUAGES.keys()];
+}
+
+/** The language claiming `ext` (dot optional, case-insensitive), or `undefined`. */
+export function languageNameForExtension(ext: string): string | undefined {
+  return EXTENSIONS.get(normalizeExtension(ext));
+}
+
+/** Every claimed file extension, dot-prefixed — what `tektonic lint` walks. */
+export function registeredExtensions(): string[] {
+  return [...EXTENSIONS.keys()];
 }
 
 /** Per-body opt-outs from a framework guard. */
@@ -186,14 +312,17 @@ export function fragment(strings: TemplateStringsArray, ...values: unknown[]): F
   return new Fragment(dedent(interpolate(strings, values)));
 }
 
+// The built-ins go through the same registry a third party uses — there is no privileged
+// path into it, which is the only way the seam stays honest.
+
 /** Tagged-template helper authoring a POSIX sh step body, e.g. ``sh`echo hi` ``. */
-export const sh = tag(LANGUAGES.sh);
+export const sh = registerLanguage(new Sh(), { extensions: ['.sh'] });
 /** Tagged-template helper authoring a bash step body, e.g. ``bash`echo hi` ``. */
-export const bash = tag(LANGUAGES.bash);
+export const bash = registerLanguage(new Bash(), { extensions: ['.bash'] });
 /** Tagged-template helper authoring a nushell step body, e.g. ``nu`print hi` ``. */
-export const nu = tag(LANGUAGES.nushell);
+export const nu = registerLanguage(new Nushell(), { extensions: ['.nu'] });
 /** Tagged-template helper authoring a python step body, e.g. ``py`print("hi")` ``. */
-export const py = tag(LANGUAGES.python);
+export const py = registerLanguage(new Python(), { extensions: ['.py'] });
 
 /** Object-form helper: `script({ language: 'python', body: '…' })`. */
 export function script(spec: ScriptObject): Script {

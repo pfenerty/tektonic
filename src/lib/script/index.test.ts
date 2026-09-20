@@ -40,9 +40,10 @@ describe('script() object helper', () => {
 });
 
 describe('languageFor', () => {
-  it('throws on an unknown language', () => {
-    // @ts-expect-error intentionally invalid name
-    expect(() => languageFor('ruby')).toThrow(/Unknown script language/);
+  // An unregistered name is a runtime error now, not a type error: LanguageName is open so
+  // a language registered by another package is nameable. See registry.test.ts.
+  it('throws on an unregistered language, listing the registered names', () => {
+    expect(() => languageFor('ruby')).toThrow(/Unknown script language "ruby" \(expected one of/);
   });
 });
 

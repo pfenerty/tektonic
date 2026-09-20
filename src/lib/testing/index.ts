@@ -26,6 +26,15 @@ import type { InjectedStepImage } from '../core/injected-image';
  * ```
  */
 
+/**
+ * Conformance harness for authors of a `ScriptLanguage` — see `language-conformance.ts`.
+ */
+export {
+  assertExitCodeContract,
+  interpreterAvailable,
+} from './language-conformance';
+export type { ExitCodeContractOptions, ConformanceResult } from './language-conformance';
+
 /** A single task entry in a synthesized pipeline spec. */
 export interface PipelineTaskView {
   name: string;

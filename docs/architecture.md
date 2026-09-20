@@ -191,8 +191,20 @@ A target never receives PAC's annotations, `{{ }}` variables or `Repository` con
 Renders a step body: a shebang, a `wrap(body, ctx)` that adds a `log` preamble and honours the
 exit-code contract (`ScriptCtx.captureExitCode` → write the worst code to `ctx.exitCodePath` and
 re-exit), and a `lintCommand(file)` for the dev harness. Reuse via inheritance where possible —
-`Bash` extends `Sh` and only changes the shebang. See [scripting.md](scripting.md). Test new
-languages with the execute-and-assert pattern in `src/lib/script/runtime.test.ts`.
+`Bash` extends `Sh` and only changes the shebang. See [scripting.md](scripting.md).
+
+`registerLanguage(lang, { extensions })` returns the language's tagged-template helper and is
+the only way in — the four built-ins register through it at import time, so an out-of-tree
+language reaches the same ergonomics: the tag, `languageFor`, the `{ language, body }` object
+form, task and project `defaultLanguage`, `scriptFromFile`'s extension inference, and
+`tektonic lint`'s file discovery. `LanguageName` is `KnownLanguageName | (string & {})`: open
+to any registered name, still autocompleting the built-ins. A name may be registered once
+(a second registration throws); a conflicting extension warns and the last one wins.
+
+The one thing a language may not choose is the exit-code contract — a `wrap` that ignores
+`captureExitCode` reports a failed step as green, silently. `assertExitCodeContract` from
+`@pfenerty/tektonic/testing` renders, executes and asserts it, so an out-of-tree language can
+prove compliance; `src/lib/script/runtime.test.ts` is the same pattern written by hand.
 
 ### `CacheBackend` (`src/lib/core/cache-backend.ts`)
 

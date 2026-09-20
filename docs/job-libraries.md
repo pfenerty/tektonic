@@ -230,6 +230,7 @@ major version:
 | `ScriptInput`, `Script`, `sh`/`bash`/`nu`/`py`, `fragment`, `scriptFromFile` | script authoring |
 | `Condition`, `equals`/`isIn`/`onBranch`/`onChanges`/`and`/`or`/`not` | gating |
 | `StatusReporter`, `CacheBackend`, `ScriptLanguage`, `SynthTarget` | strategy interfaces to implement |
+| `registerLanguage(lang, { extensions })` | register a `ScriptLanguage` and get its tagged-template helper |
 | `PAC_PARAMS`, `PAC_EVENT_ENV` | the PAC-supplied params and event context |
 | `@pfenerty/tektonic/testing` | `synthPipeline` / `synthTask` for the library's own tests |
 

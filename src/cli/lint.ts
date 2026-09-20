@@ -2,9 +2,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { lintCommandForFile, languageNameForFile } from '../lib/script/from-file';
+import { registeredExtensions } from '../lib/script';
 
-/** Extensions the linter recognises, matching the languages `scriptFromFile` supports. */
-export const LINTABLE_EXTENSIONS = ['.bash', '.sh', '.nu', '.py'];
+/**
+ * Extensions the linter recognises: every extension a registered {@link ScriptLanguage}
+ * claims, so a language registered out of tree gets its files linted by its own
+ * `lintCommand` without editing this list.
+ *
+ * Read at call time rather than at import time — a consumer's `registerLanguage` call
+ * runs when its module is loaded, which can be after this one.
+ */
+export function lintableExtensions(): string[] {
+  return registeredExtensions();
+}
 
 /** Result of a lint run. */
 export interface LintResult {
@@ -22,14 +32,15 @@ export function collectScripts(target: string, acc: string[] = []): string[] {
       if (entry === 'node_modules' || entry === 'dist' || entry.startsWith('.')) continue;
       collectScripts(path.join(target, entry), acc);
     }
-  } else if (LINTABLE_EXTENSIONS.includes(path.extname(target).toLowerCase())) {
+  } else if (lintableExtensions().includes(path.extname(target).toLowerCase())) {
     acc.push(target);
   }
   return acc;
 }
 
 /**
- * Runs each script file through its language's linter (shellcheck / nu-check / py_compile).
+ * Runs each script file through its language's linter (shellcheck / nu-check / py_compile,
+ * or whatever a registered language returns from `lintCommand`).
  *
  * A linter that is not installed is skipped rather than failed, so this is safe to run
  * anywhere; install the linters for full coverage.
