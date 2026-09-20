@@ -3,6 +3,7 @@ import type { Pipeline } from '../core/pipeline';
 import { TaskDef } from '../core/task';
 import type { ImagePullPolicy } from '../core/task';
 import type { LanguageName } from '../script';
+import type { InjectedStepImage } from '../core/injected-image';
 
 /**
  * Test helpers for asserting what a pipeline definition synthesizes to, in memory — no files
@@ -147,6 +148,8 @@ export interface SynthOptions {
   defaultLanguage?: LanguageName;
   /** Project-level default image pull policy. */
   defaultImagePullPolicy?: ImagePullPolicy;
+  /** Project-level image for injected steps, as `TektonicProject.injectedStepImage`. */
+  injectedStepImage?: InjectedStepImage;
 }
 
 /**
@@ -214,14 +217,13 @@ export class TaskView {
 /** Synthesizes a single Task manifest in memory. */
 export function synthTask(task: TaskDef, opts: SynthOptions = {}): TaskView {
   const chart = new Chart(new App(), task.name);
-  task.synth(
-    chart,
-    opts.namespace ?? 'default',
-    opts.namePrefix,
-    opts.stepSecurityContext,
-    opts.defaultLanguage,
-    opts.defaultImagePullPolicy,
-  );
+  task.synth(chart, opts.namespace ?? 'default', {
+    namePrefix: opts.namePrefix,
+    stepSecurityContext: opts.stepSecurityContext,
+    defaultLanguage: opts.defaultLanguage,
+    defaultImagePullPolicy: opts.defaultImagePullPolicy,
+    injectedStepImage: opts.injectedStepImage,
+  });
   return new TaskView(chart.toJson()[0] as Record<string, unknown>);
 }
 

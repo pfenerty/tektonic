@@ -12,7 +12,8 @@ the ceremony and stringly-typed fragility of hand-written YAML. Three principles
 1. **The library is a base, not a framework.** Core types (`Param`, `Workspace`, `Result`,
    `Task`, `Pipeline`) are pure orchestration primitives. Tektonic never prescribes how you
    build, test, or deploy your application — opinions like git-cloning live in opt-in subclasses
-   (`GitPipeline`) and overridable constants (`DEFAULT_BASE_IMAGE`).
+   (`GitPipeline`), and the images its injected steps run in come from the project
+   (`injectedStepImage`), never from a registry the library picked.
 2. **Provider concerns are pluggable.** Caching, status reporting, scripting languages and
    *synthesis itself* are strategy interfaces with built-in implementations, so no provider is
    baked into the core: PAC is one `SynthTarget` among possible others, not the only way out.

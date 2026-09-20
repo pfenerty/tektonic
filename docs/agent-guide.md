@@ -296,6 +296,16 @@ new TektonicProject({
   // Covers the injected cache/reporter steps too, and sidecars: Tekton excludes those
   // from stepTemplate, so tektonic stamps the policy onto each sidecar directly.
   defaultImagePullPolicy: 'Always',
+
+  // Image for the steps tektonic injects: git clone, cache restore/save, status reporting,
+  // change detection. Tektonic ships no image — it generates the scripts and expects the
+  // image to provide what they invoke. Defaults to DEFAULT_INJECTED_STEP_IMAGE, a neutral
+  // public image with sh + git only, so compressed caches, GCS caches and the built-in
+  // status reporter (nushell, tar, zstd, gcloud) need an image named here — or synthesis
+  // fails naming the missing capability, instead of the pod failing mid-run.
+  injectedStepImage: DEFAULT_BASE_IMAGE,
+  // …or declare what a custom image has, and let tektonic check it:
+  // injectedStepImage: { image: 'ghcr.io/acme/ci-base:1.4.0', provides: ['sh', 'git', 'nushell'] },
 });
 ```
 
@@ -992,6 +1002,10 @@ new TektonicProject({
     outdir: '.tekton',
     workspaceStorageSize: '3Gi',
     repository: { url: 'https://github.com/my-org/my-app' },
+    // Image for the steps tektonic injects (clone, cache restore/save, status reporting).
+    // The library's own fallback provides sh + git only; compressed caches and the status
+    // reporter need nushell/tar/zstd, so this project names an image that has them.
+    injectedStepImage: DEFAULT_BASE_IMAGE,
     // Provide the GitHub token (status reporting, SARIF upload) via PAC's git-auth secret.
     podTemplateEnv: [{
         name: 'GITHUB_TOKEN',

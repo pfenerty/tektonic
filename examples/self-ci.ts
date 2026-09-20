@@ -6,6 +6,7 @@ import {
     GitHubStatusReporter,
     PAC_PARAMS,
     DEFAULT_BASE_IMAGE,
+    DEFAULT_GCS_CACHE_IMAGE,
     gcs,
     sh,
     nu,
@@ -29,6 +30,11 @@ const statusReporter = new GitHubStatusReporter({ skipTokenInjection: true });
 // ─── Cache backend ──────────────────────────────────────────────────────────
 // GCS bucket for caching build artifacts. Requires Workload Identity on GKE.
 const gcsBucket = "tektonic-ci-cache";
+// The GCS cache steps need `gcloud` on top of nushell/zstd, which the project-level
+// injectedStepImage below does not carry — so this backend names its own image. Declared
+// once here rather than per cache.
+const cacheBackend = (prefix: string) =>
+    gcs({ bucket: gcsBucket, prefix, image: DEFAULT_GCS_CACHE_IMAGE });
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 const npmTest = new Task({
@@ -39,7 +45,7 @@ const npmTest = new Task({
             name: "npm",
             key: ["package-lock.json"],
             paths: ["node_modules"],
-            backend: gcs({ bucket: gcsBucket, prefix: "npm/" }),
+            backend: cacheBackend("npm/"),
             compress: true,
             workingDir: "$(workspaces.workspace.path)",
         },
@@ -91,7 +97,7 @@ const npmBuild = new Task({
             name: "npm",
             key: ["package-lock.json"],
             paths: ["node_modules"],
-            backend: gcs({ bucket: gcsBucket, prefix: "npm/" }),
+            backend: cacheBackend("npm/"),
             compress: true,
             workingDir: "$(workspaces.workspace.path)",
         },
@@ -119,7 +125,7 @@ const anchoreScann = new Task({
             name: "grype-db",
             key: [],
             paths: ["grype-db"],
-            backend: gcs({ bucket: gcsBucket, prefix: "grype/" }),
+            backend: cacheBackend("grype/"),
             compress: true,
             forceSave: true,
             maxEntries: 1,
@@ -247,6 +253,11 @@ new TektonicProject({
     pipelines: [pushPipeline, prPipeline],
     outdir: ".tektonic",
     workspaceStorageSize: "3Gi",
+    // Image for the steps tektonic injects (git clone, cache restore/save, status
+    // reporting). The library falls back to a neutral public image providing sh + git
+    // only; this project's compressed caches and status reporter need nushell, tar and
+    // zstd, so it names an image that has them.
+    injectedStepImage: DEFAULT_BASE_IMAGE,
     repository: { url: "https://github.com/pfenerty/tektonic" },
     // Provide the GitHub token (for status reporting + SARIF upload) via PAC's git-auth
     // secret at the pod level, so every step sees GITHUB_TOKEN.

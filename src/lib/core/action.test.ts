@@ -215,10 +215,14 @@ describe('composing actions into a task', () => {
 
 describe('the exit-code contract', () => {
   const reporter = new GitHubStatusReporter();
+  // The reporter's step needs nushell, so these tasks synthesize with a project image
+  // declaring it — as a project does with `injectedStepImage`.
+  const CAPABLE = { injectedStepImage: 'ghcr.io/example/ci-base:test' } as const;
 
   it('wraps an action step exactly as a hand-written one in a reporting task', () => {
     const view = synthTask(
       new Task({ name: 'scan', statusReporter: reporter, steps: [syft({ image: 'app:1.0' })] }),
+      CAPABLE,
     );
     expect(view.script('syft-sbom-scan')).toContain(EXIT_CODE_PATH);
     expect(view.step('syft-sbom-scan').onError).toBe('continue');
@@ -257,7 +261,7 @@ describe('the exit-code contract', () => {
       image: 'alpine',
       steps: () => [{ name: 'a', script: rawScript(`#!/bin/sh\nprintf '%s' 0 > ${EXIT_CODE_PATH}`) }],
     })();
-    const view = synthTask(new Task({ name: 'scan', statusReporter: reporter, steps: [stated] }));
+    const view = synthTask(new Task({ name: 'scan', statusReporter: reporter, steps: [stated] }), CAPABLE);
     expect(view.script('stated-a')).toBe(`#!/bin/sh\nprintf '%s' 0 > ${EXIT_CODE_PATH}`);
   });
 });

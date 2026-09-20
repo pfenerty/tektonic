@@ -4,7 +4,6 @@ import {
     TEKTON_API_V1,
     DEFAULT_STEP_SECURITY_CONTEXT,
     DEFAULT_STEP_RESOURCES,
-    DEFAULT_BASE_IMAGE,
 } from "../constants";
 import { Param } from "./param";
 import { Workspace } from "./workspace";
@@ -17,6 +16,12 @@ import type { CacheBackend, BackendCtx } from "./cache-backend";
 import { renderScript, EXIT_CODE_PATH } from "../script";
 import type { ScriptInput, LanguageName, ScriptCtx } from "../script";
 import { Action, ACTION_OUTPUT_DIR, ACTION_VOLUME_NAME } from "./action";
+import {
+    injectedImageRef,
+    normalizeInjectedStepImage,
+    resolveInjectedImage,
+} from "./injected-image";
+import type { InjectedStepImage } from "./injected-image";
 
 /**
  * Kubernetes image pull policy.
@@ -27,6 +32,41 @@ import { Action, ACTION_OUTPUT_DIR, ACTION_VOLUME_NAME } from "./action";
  * referenced by tag rather than digest.
  */
 export type ImagePullPolicy = "Always" | "IfNotPresent" | "Never";
+
+/**
+ * Project-level defaults handed to {@link TaskDef.synth}. {@link TektonicProject} fills
+ * these from its own options; a task synthesized directly (in a test, say) may pass any
+ * subset and gets the library defaults for the rest.
+ */
+export interface TaskSynthOptions {
+    /** Name prefix applied to the emitted resource name, as `TektonicProject.name` does. */
+    namePrefix?: string;
+    /**
+     * Additional container-level security context fields merged on top of
+     * `DEFAULT_STEP_SECURITY_CONTEXT`, from the project's `defaultStepSecurityContext`. The
+     * task's own `stepTemplate.securityContext` (if any) takes precedence over this.
+     */
+    stepSecurityContext?: Record<string, unknown>;
+    /**
+     * Project-level default scripting language, used for bare-body steps when the task does
+     * not set its own `defaultLanguage`.
+     */
+    defaultLanguage?: LanguageName;
+    /**
+     * Project-level pull policy written into this task's `stepTemplate`, so it also covers
+     * the injected cache and reporter steps. The task's own `stepTemplate.imagePullPolicy`
+     * (if any) takes precedence; a step's own `imagePullPolicy` takes precedence over both.
+     * Tekton applies `stepTemplate` to steps only — sidecars must set their own.
+     */
+    defaultImagePullPolicy?: ImagePullPolicy;
+    /**
+     * Project-level image for the steps tektonic injects (clone, cache restore/save, status
+     * reporting, change detection). Any of those steps given no image of its own resolves to
+     * this one at synth time, and synthesis fails when the image does not declare a
+     * capability the step needs. Defaults to {@link DEFAULT_INJECTED_STEP_IMAGE}.
+     */
+    injectedStepImage?: InjectedStepImage;
+}
 
 /** Specification for a single step within a Tekton Task. */
 export interface TaskStepSpec {
@@ -103,10 +143,10 @@ export interface TaskCacheSpec {
      */
     workspace?: Workspace;
     /**
-     * Image for the injected restore/save steps. When omitted, the backend's own
-     * default is used, falling back to the project's default step image
-     * (`DEFAULT_BASE_IMAGE` for {@link PvcBackend}, `DEFAULT_GCS_CACHE_IMAGE` for
-     * {@link GcsBackend}).
+     * Image for the injected restore/save steps. When omitted, the backend's own default
+     * is used, falling back to the project's `injectedStepImage` — which must declare the
+     * capabilities the backend asked for (`nushell`/`tar`/`zstd` for a compressed cache,
+     * plus `gcloud` for {@link GcsBackend}), or synthesis fails naming them.
      */
     image?: string;
     /**
@@ -563,26 +603,21 @@ export class TaskDef implements TaskLike {
     /**
      * Synthesizes the Tekton Task resource into the given cdk8s scope.
      *
-     * @param stepSecurityContext - Additional container-level security context fields merged on
-     *   top of `DEFAULT_STEP_SECURITY_CONTEXT`. Supplied by `TektonicProject` from the project's
-     *   `defaultStepSecurityContext` option. The task's own `stepTemplate.securityContext` (if
-     *   any) takes precedence over this via the spread in stepTemplate.
-     * @param projectDefaultLanguage - Project-level default scripting language, used for
-     *   bare-body steps when the task does not set its own `defaultLanguage`.
-     * @param defaultImagePullPolicy - Project-level pull policy written into this task's
-     *   `stepTemplate`, so it also covers the injected cache and reporter steps. The task's
-     *   own `stepTemplate.imagePullPolicy` (if any) takes precedence via the spread in
-     *   stepTemplate; a step's own `imagePullPolicy` takes precedence over both. Tekton
-     *   applies `stepTemplate` to steps only — sidecars must set their own.
+     * @param opts - Project-level defaults, as {@link TektonicProject} supplies them. All
+     *   optional: a task synthesized on its own carries the library's own defaults.
      */
     synth(
         scope: Construct,
         namespace: string,
-        namePrefix?: string,
-        stepSecurityContext?: Record<string, unknown>,
-        projectDefaultLanguage?: LanguageName,
-        defaultImagePullPolicy?: ImagePullPolicy,
+        opts: TaskSynthOptions = {},
     ): void {
+        const {
+            namePrefix,
+            stepSecurityContext,
+            defaultLanguage: projectDefaultLanguage,
+            defaultImagePullPolicy,
+            injectedStepImage,
+        } = opts;
         const resourceName = namePrefix
             ? `${namePrefix}-${this.name}`
             : this.name;
@@ -590,7 +625,8 @@ export class TaskDef implements TaskLike {
             ...DEFAULT_STEP_SECURITY_CONTEXT,
             ...(stepSecurityContext ?? {}),
         };
-        const ctx: BackendCtx = { taskName: this.name, defaultImage: DEFAULT_BASE_IMAGE };
+        const injectedImage = normalizeInjectedStepImage(injectedStepImage);
+        const ctx: BackendCtx = { taskName: this.name, defaultImage: injectedImageRef() };
         const restoreSteps = this.caches.map((c) =>
             (c.backend ?? new PvcBackend()).restoreStep(
                 this._effectiveCacheSpec(c),
@@ -632,6 +668,12 @@ export class TaskDef implements TaskLike {
         ): Record<string, unknown> => {
             const { securityContext, script, onError, ...rest } = s;
             const out: Record<string, unknown> = { ...rest };
+            // Injected steps carry a marker rather than an image, so the project's choice
+            // reaches them here instead of being baked in wherever they were constructed.
+            out.image = resolveInjectedImage(s.image, injectedImage, {
+                taskName: this.name,
+                stepName: s.name,
+            });
             if (script !== undefined) {
                 // stepName is per-step, so it is layered on here rather than baked
                 // into the shared ctx above.
@@ -719,7 +761,7 @@ export class TaskDef implements TaskLike {
      * they run in their own pod after the build pod has terminated.
      */
     getCacheFinallyTasks(): Task[] {
-        const ctx: BackendCtx = { taskName: this.name, defaultImage: DEFAULT_BASE_IMAGE };
+        const ctx: BackendCtx = { taskName: this.name, defaultImage: injectedImageRef() };
         return this.caches
             .filter((c) => c.saveStrategy === "finally")
             .map((c) => {

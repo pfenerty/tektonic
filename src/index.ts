@@ -4,7 +4,7 @@ export type { ParamOptions } from "./lib/core/param";
 export { Workspace } from "./lib/core/workspace";
 export type { WorkspaceOptions } from "./lib/core/workspace";
 export { Task, TaskDef } from "./lib/core/task";
-export type { TaskLike, TaskOptions, TaskStepSpec, TaskStepInput, TaskCacheSpec, TaskSidecarSpec, TaskVolumeSpec, ImagePullPolicy } from "./lib/core/task";
+export type { TaskLike, TaskOptions, TaskStepSpec, TaskStepInput, TaskCacheSpec, TaskSidecarSpec, TaskVolumeSpec, ImagePullPolicy, TaskSynthOptions } from "./lib/core/task";
 export { defineAction, Action, ActionOutput, ACTION_OUTPUT_DIR, ACTION_VOLUME_NAME } from "./lib/core/action";
 export type {
     ActionDefinition,
@@ -23,7 +23,7 @@ export { HubTaskRef } from "./lib/core/hub-task-ref";
 export type { HubTaskRefOptions } from "./lib/core/hub-task-ref";
 export type { CacheBackend, BackendCtx } from "./lib/core/cache-backend";
 export { PvcBackend } from "./lib/cache/pvc-backend";
-export { GcsBackend, gcs } from "./lib/cache/gcs-backend";
+export { GcsBackend, gcs, DEFAULT_GCS_CACHE_IMAGE } from "./lib/cache/gcs-backend";
 export type { GcsBackendOptions } from "./lib/cache/gcs-backend";
 export { gated, GatedTask, unwrapGated } from "./lib/core/pipeline-task";
 export { PAC_PARAMS, PAC_PARAM_BINDINGS, PAC_INJECTED_PARAMS, PAC_EVENT_ENV } from "./lib/targets/pac/params";
@@ -89,6 +89,17 @@ export type { GitHubStatusReporterOptions } from "./lib/reporters/github-status-
 export { App, Chart, ApiObject } from "cdk8s";
 export type { AppProps, ChartProps } from "cdk8s";
 export { Construct } from "constructs";
+
+// Injected-step images: the seam every step tektonic injects resolves its image through.
+export {
+    injectedImageRef,
+    DEFAULT_INJECTED_STEP_IMAGE,
+} from "./lib/core/injected-image";
+export type {
+    ImageCapability,
+    InjectedStepImage,
+    InjectedStepImageSpec,
+} from "./lib/core/injected-image";
 
 // Constants
 export {

@@ -29,7 +29,8 @@
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
     "dist/**/*.js.map",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public",

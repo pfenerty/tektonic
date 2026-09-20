@@ -14,6 +14,11 @@ export interface BackendCtx {
     /**
      * Project-level fallback image for injected cache steps, used when neither
      * {@link TaskCacheSpec.image} nor the backend's own default names one.
+     *
+     * It is a marker resolved at synth time against the project's `injectedStepImage`,
+     * requiring only `sh`. A backend whose steps need more — nushell, zstd, a cloud CLI —
+     * asks for it with `injectedImageRef('nushell', …)` instead, so the project's image
+     * is still what runs and a missing capability fails synthesis rather than the pod.
      */
     defaultImage: string;
 }
@@ -33,14 +38,16 @@ export interface BackendCtx {
  *   }
  *   saveStep(spec, ctx) { ... }
  *   private _image(spec: TaskCacheSpec, ctx: BackendCtx) {
- *     return spec.image ?? this.opts.image ?? DEFAULT_S3_CACHE_IMAGE;
+ *     return spec.image ?? this.opts.image ?? injectedImageRef('nushell', 'zstd');
  *   }
  * }
  * ```
  *
  * Step images resolve in one order, and every backend should honour it:
- * `spec.image` → the backend's own default → `ctx.defaultImage`. A backend with no
- * image needs of its own ends that chain at `ctx.defaultImage`.
+ * `spec.image` → the backend's own default → the project's injected-step image. A backend
+ * with no image needs of its own ends that chain at `ctx.defaultImage`; one that has them
+ * ends it at `injectedImageRef(...capabilities)`, which resolves to the same project image
+ * while declaring what that image must provide.
  *
  * Pass an instance via `TaskCacheSpec.backend`. When omitted, {@link PvcBackend} is used.
  */

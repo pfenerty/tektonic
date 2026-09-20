@@ -6,10 +6,19 @@ import { Workspace } from './workspace';
 import { Result } from './result';
 import { HubTaskRef } from './hub-task-ref';
 import { gcs, DEFAULT_GCS_CACHE_IMAGE } from '../cache/gcs-backend';
-import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES, DEFAULT_BASE_IMAGE } from '../constants';
+import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES } from '../constants';
+import { DEFAULT_INJECTED_STEP_IMAGE } from './injected-image';
 import { GitHubStatusReporter } from '../reporters/github-status-reporter';
 import { nu, sh, EXIT_CODE_PATH } from '../script';
 import { onBranch } from './condition';
+
+/**
+ * Synth options these tests pass for the project's injected-step image. A bare string is
+ * trusted for every capability, which is what tasks with compressed caches, GCS caches or a
+ * status reporter need — tektonic's neutral fallback declares only `sh` and `git`, so a
+ * project using those features names an image, and so do these tests.
+ */
+const CAPABLE = { injectedStepImage: 'ghcr.io/example/ci-base:test' } as const;
 
 describe('Task', () => {
   const workspace = new Workspace({ name: 'workspace' });
@@ -83,7 +92,7 @@ describe('Task', () => {
         workspaces: [workspace],
         steps: [{ name: 'run', image: 'alpine', command: ['echo', 'hi'] }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.apiVersion).toBe('tekton.dev/v1');
       expect(manifest.kind).toBe('Task');
@@ -97,7 +106,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.stepTemplate.computeResources).toEqual(DEFAULT_STEP_RESOURCES);
       expect(manifest.spec.steps[0].computeResources).toBeUndefined();
@@ -110,7 +119,7 @@ describe('Task', () => {
         name: 'heavy',
         steps: [{ name: 's', image: 'alpine', computeResources: { limits: { cpu: '4', memory: '4Gi' } } }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.steps[0].computeResources).toEqual({ limits: { cpu: '4', memory: '4Gi' } });
     });
@@ -123,7 +132,7 @@ describe('Task', () => {
         steps: [{ name: 'run', image: 'alpine' }],
         stepTemplate: { securityContext: RESTRICTED_STEP_SECURITY_CONTEXT },
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.stepTemplate.securityContext.runAsNonRoot).toBe(true);
     });
@@ -132,7 +141,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] });
-      t.synth(chart, 'ns', undefined, { runAsNonRoot: true, runAsUser: 1000 });
+      t.synth(chart, 'ns', { stepSecurityContext: { runAsNonRoot: true, runAsUser: 1000 } });
       const manifest = chart.toJson()[0];
       expect(manifest.spec.stepTemplate.securityContext.allowPrivilegeEscalation).toBe(false);
       expect(manifest.spec.stepTemplate.securityContext.runAsNonRoot).toBe(true);
@@ -147,7 +156,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         stepTemplate: { securityContext: { allowPrivilegeEscalation: false, runAsUser: 999 } },
       });
-      t.synth(chart, 'ns', undefined, { runAsUser: 1000 });
+      t.synth(chart, 'ns', { stepSecurityContext: { runAsUser: 1000 } });
       const manifest = chart.toJson()[0];
       // task stepTemplate wins over project default
       expect(manifest.spec.stepTemplate.securityContext.runAsUser).toBe(999);
@@ -163,7 +172,7 @@ describe('Task', () => {
           { name: 'normal', image: 'alpine' },
         ],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.steps[0].securityContext).toEqual({ runAsUser: 0 });
       expect(manifest.spec.steps[1].securityContext).toBeUndefined();
@@ -173,7 +182,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.stepTemplate.securityContext.fsGroup).toBeUndefined();
     });
@@ -182,7 +191,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'pull', steps: [{ name: 's', image: 'alpine' }] });
-      t.synth(chart, 'ns', undefined, undefined, undefined, 'Always');
+      t.synth(chart, 'ns', { defaultImagePullPolicy: 'Always' });
       const manifest = chart.toJson()[0];
       expect(manifest.spec.stepTemplate.imagePullPolicy).toBe('Always');
     });
@@ -191,7 +200,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.stepTemplate.imagePullPolicy).toBeUndefined();
       expect(manifest.spec.steps[0].imagePullPolicy).toBeUndefined();
@@ -205,7 +214,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine@sha256:abc' }],
         stepTemplate: { imagePullPolicy: 'IfNotPresent' },
       });
-      t.synth(chart, 'ns', undefined, undefined, undefined, 'Always');
+      t.synth(chart, 'ns', { defaultImagePullPolicy: 'Always' });
       const manifest = chart.toJson()[0];
       expect(manifest.spec.stepTemplate.imagePullPolicy).toBe('IfNotPresent');
     });
@@ -220,7 +229,7 @@ describe('Task', () => {
           { name: 'normal', image: 'alpine' },
         ],
       });
-      t.synth(chart, 'ns', undefined, undefined, undefined, 'Always');
+      t.synth(chart, 'ns', { defaultImagePullPolicy: 'Always' });
       const manifest = chart.toJson()[0];
       expect(manifest.spec.steps[0].imagePullPolicy).toBe('IfNotPresent');
       expect(manifest.spec.steps[1].imagePullPolicy).toBeUndefined();
@@ -236,7 +245,7 @@ describe('Task', () => {
         sidecars: [{ name: 'db', image: 'postgres:15-alpine', imagePullPolicy: 'Always' }],
       });
       // Tekton applies stepTemplate to steps only, so the sidecar carries its own policy.
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.sidecars[0].imagePullPolicy).toBe('Always');
     });
@@ -245,7 +254,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'clone', steps: [{ name: 's', image: 'git' }] });
-      t.synth(chart, 'ns', 'myapp');
+      t.synth(chart, 'ns', { namePrefix: 'myapp' });
       const manifest = chart.toJson()[0];
       expect(manifest.metadata.name).toBe('myapp-clone');
     });
@@ -254,7 +263,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.params).toBeUndefined();
       expect(manifest.spec.workspaces).toBeUndefined();
@@ -270,7 +279,7 @@ describe('Task', () => {
         results: [commit, shortSha],
         steps: [{ name: 's', image: 'alpine' }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.results).toHaveLength(2);
       expect(manifest.spec.results[0]).toEqual({ name: 'commit', type: 'string' });
@@ -281,7 +290,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       expect(chart.toJson()[0].spec.results).toBeUndefined();
     });
 
@@ -324,7 +333,7 @@ describe('Task', () => {
         steps: [{ name: 'run', image: 'alpine' }],
         caches: [cacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       const names = manifest.spec.steps.map((s: any) => s.name);
       expect(names[0]).toBe('restore-npm-cache');
@@ -342,7 +351,7 @@ describe('Task', () => {
         steps: [{ name: 'run', image: 'alpine' }],
         caches: [cacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       const names = manifest.spec.steps.map((s: any) => s.name);
       const saveIdx = names.indexOf('save-npm-cache');
@@ -359,7 +368,7 @@ describe('Task', () => {
         steps: [{ name: 'run', image: 'alpine' }],
         caches: [cacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       const restoreStep = manifest.spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restoreStep.script).toContain('sha256sum');
@@ -376,7 +385,7 @@ describe('Task', () => {
         steps: [{ name: 'run', image: 'alpine' }],
         caches: [cacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       const saveStep = manifest.spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(saveStep.script).toContain('/tekton/home/.cache-npm-hash');
@@ -396,7 +405,7 @@ describe('Task', () => {
           { name: 'go', key: ['go.sum'], paths: ['vendor'], workspace: ws2 },
         ],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       const names = manifest.spec.steps.map((s: any) => s.name);
       expect(names).toEqual([
@@ -415,7 +424,7 @@ describe('Task', () => {
         const app = new App();
         const chart = new Chart(app, 'test');
         const t = new Task({ name: 'c', steps: [{ name: 's', image: 'alpine' }], caches: [compressedSpec] });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const step = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(step.script).toContain('#!/usr/bin/env nu');
         expect(step.script).toContain('zstd -d -T1 -c');
@@ -429,7 +438,7 @@ describe('Task', () => {
         const app = new App();
         const chart = new Chart(app, 'test');
         const t = new Task({ name: 'c', steps: [{ name: 's', image: 'alpine' }], caches: [compressedSpec] });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const step = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
         expect(step.script).toContain('#!/usr/bin/env nu');
         expect(step.script).toContain('tar cf -');
@@ -441,7 +450,7 @@ describe('Task', () => {
         const app = new App();
         const chart = new Chart(app, 'test');
         const t = new Task({ name: 'c', steps: [{ name: 's', image: 'alpine' }], caches: [compressedSpec] });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const steps = chart.toJson()[0].spec.steps;
         const restore = steps.find((s: any) => s.name === 'restore-npm-cache');
         const save = steps.find((s: any) => s.name === 'save-npm-cache');
@@ -457,7 +466,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...compressedSpec, workingDir: '$(workspaces.workspace.path)' }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const steps = chart.toJson()[0].spec.steps;
         const restore = steps.find((s: any) => s.name === 'restore-npm-cache');
         const save = steps.find((s: any) => s.name === 'save-npm-cache');
@@ -469,7 +478,7 @@ describe('Task', () => {
         const app = new App();
         const chart = new Chart(app, 'test');
         const t = new Task({ name: 'c', steps: [{ name: 's', image: 'alpine' }], caches: [compressedSpec] });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const steps = chart.toJson()[0].spec.steps;
         const restore = steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.workingDir).toBeUndefined();
@@ -479,7 +488,7 @@ describe('Task', () => {
         const app = new App();
         const chart = new Chart(app, 'test');
         const t = new Task({ name: 'c', steps: [{ name: 's', image: 'alpine' }], caches: [cacheSpec] });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const steps = chart.toJson()[0].spec.steps;
         const restore = steps.find((s: any) => s.name === 'restore-npm-cache');
         const save = steps.find((s: any) => s.name === 'save-npm-cache');
@@ -495,7 +504,7 @@ describe('Task', () => {
         const app = new App();
         const chart = new Chart(app, 'test');
         const t = new Task({ name: 'c', steps: [{ name: 's', image: 'alpine' }], caches: [spec] });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const steps = chart.toJson()[0].spec.steps;
         return {
           restore: steps.find((s: any) => s.name === 'restore-npm-cache').script,
@@ -537,7 +546,23 @@ describe('Task', () => {
     });
 
     describe('default cache image', () => {
-      it('uses DEFAULT_BASE_IMAGE when no image specified', () => {
+      it("uses the project's injectedStepImage when no image specified", () => {
+        const app = new App();
+        const chart = new Chart(app, 'test');
+        const t = new Task({
+          name: 'c',
+          steps: [{ name: 's', image: 'alpine' }],
+          caches: [cacheSpec],
+        });
+        t.synth(chart, 'ns', CAPABLE);
+        const steps = chart.toJson()[0].spec.steps;
+        const restore = steps.find((s: any) => s.name === 'restore-npm-cache');
+        const save = steps.find((s: any) => s.name === 'save-npm-cache');
+        expect(restore.image).toBe(CAPABLE.injectedStepImage);
+        expect(save.image).toBe(CAPABLE.injectedStepImage);
+      });
+
+      it('falls back to the neutral default image when the project sets none', () => {
         const app = new App();
         const chart = new Chart(app, 'test');
         const t = new Task({
@@ -548,9 +573,8 @@ describe('Task', () => {
         t.synth(chart, 'ns');
         const steps = chart.toJson()[0].spec.steps;
         const restore = steps.find((s: any) => s.name === 'restore-npm-cache');
-        const save = steps.find((s: any) => s.name === 'save-npm-cache');
-        expect(restore.image).toBe(DEFAULT_BASE_IMAGE);
-        expect(save.image).toBe(DEFAULT_BASE_IMAGE);
+        expect(restore.image).toBe(DEFAULT_INJECTED_STEP_IMAGE.image);
+        expect(restore.image).not.toContain('ghcr.io/pfenerty');
       });
 
       it('respects custom image override', () => {
@@ -561,7 +585,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, image: 'node:22-alpine' }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const steps = chart.toJson()[0].spec.steps;
         const restore = steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.image).toBe('node:22-alpine');
@@ -577,7 +601,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
         expect(save.script).toContain('zstd -1 -T1');
       });
@@ -590,7 +614,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true, compressionLevel: 5 }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
         expect(save.script).toContain('zstd -5 -T1');
       });
@@ -606,7 +630,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, computeResources: resources }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const steps = chart.toJson()[0].spec.steps;
         const restore = steps.find((s: any) => s.name === 'restore-npm-cache');
         const save = steps.find((s: any) => s.name === 'save-npm-cache');
@@ -622,7 +646,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [cacheSpec],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.computeResources).toBeUndefined();
       });
@@ -637,7 +661,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
         expect(save.script).toContain('let max = 3');
       });
@@ -650,7 +674,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true, maxEntries: 5 }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
         expect(save.script).toContain('let max = 5');
       });
@@ -663,7 +687,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
         expect(save.script).toContain('sort-by modified');
         expect(save.script).toContain('evicting');
@@ -681,7 +705,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [finallySpec],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const names = chart.toJson()[0].spec.steps.map((s: any) => s.name);
         expect(names).toContain('restore-npm-cache');
         expect(names).not.toContain('save-npm-cache');
@@ -695,7 +719,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [finallySpec],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         // Hash file should be on the cache PVC, not /tekton/home
         expect(restore.script).toContain('$(workspaces.npm-cache.path)/.cache-npm-hash-c');
@@ -731,7 +755,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.script).toContain('/tekton/home/.cache-npm-hash');
       });
@@ -746,7 +770,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
         expect(save.script).toContain('exists, skipping');
       });
@@ -759,7 +783,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true, forceSave: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
         expect(save.script).not.toContain('exists, skipping');
         expect(save.script).toContain('compressing');
@@ -775,7 +799,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.script).not.toContain('paths already exist');
       });
@@ -788,7 +812,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, compress: true, skipRestoreIfPathsExist: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.script).toContain('paths already exist, skipping restore');
         expect(restore.script).toContain('path exists');
@@ -806,7 +830,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, skipRestoreIfPathsExist: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.script).toContain('paths already exist, skipping restore');
         expect(restore.script).toContain('-e "./node_modules"');
@@ -822,7 +846,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, key: [], compress: true }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.script).toContain('"" | hash sha256');
         expect(restore.script).not.toContain('open --raw');
@@ -836,7 +860,7 @@ describe('Task', () => {
           steps: [{ name: 's', image: 'alpine' }],
           caches: [{ ...cacheSpec, key: [] }],
         });
-        t.synth(chart, 'ns');
+        t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
         expect(restore.script).toContain('echo -n ""');
         expect(restore.script).toContain('sha256sum');
@@ -847,7 +871,7 @@ describe('Task', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({ name: 'plain', steps: [{ name: 's', image: 'alpine' }] });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.steps).toHaveLength(1);
       expect(manifest.spec.steps[0].name).toBe('s');
@@ -865,7 +889,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], workspace: cacheWs, compress: true }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('-T1');
       expect(restore.script).not.toContain('-T0');
@@ -879,7 +903,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], workspace: cacheWs, compress: true, multiThreadCompression: true }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('-T0');
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
@@ -894,7 +918,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], compress: true, backend: gcs({ bucket: 'my-bucket' }) }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('-T0');
     });
@@ -907,7 +931,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], compress: true, backend: gcs({ bucket: 'my-bucket' }), multiThreadCompression: false }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('-T1');
     });
@@ -939,7 +963,7 @@ describe('Task', () => {
         steps: [{ name: 'run', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const names = chart.toJson()[0].spec.steps.map((s: any) => s.name);
       expect(names[0]).toBe('restore-npm-cache');
       expect(names[1]).toBe('run');
@@ -954,7 +978,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('gcloud storage ls $gcs_url | complete');
       expect(restore.script).not.toContain('metadata.google.internal');
@@ -969,7 +993,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('gcloud storage');
       expect(restore.script).toContain('my-ci-cache');
@@ -984,7 +1008,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('MB/s');
       expect(restore.script).toContain('restored in');
@@ -998,7 +1022,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(save.script).toContain('gcloud storage cp');
       expect(save.script).toContain('my-ci-cache');
@@ -1012,7 +1036,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(save.script).toContain('ratio=');
       expect(save.script).toContain('MB/s');
@@ -1027,7 +1051,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(save.script).toContain('gcloud storage ls -l');
       expect(save.script).toContain('let result = (^gcloud storage rm $e.url | complete)');
@@ -1044,7 +1068,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(save.script).toContain('zstd -3');
     });
@@ -1057,7 +1081,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ ...gcsCacheSpec, compressionLevel: 7 }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(save.script).toContain('zstd -7');
     });
@@ -1070,7 +1094,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(save.onError).toBe('continue');
     });
@@ -1084,7 +1108,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [noPrefix],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('let object = $"($hash).tar.zst"');
     });
@@ -1097,7 +1121,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ ...gcsCacheSpec, forceSave: true }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
       expect(save.script).not.toContain('exists, skipping');
     });
@@ -1110,7 +1134,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('/tekton/home/.cache-npm-hash');
     });
@@ -1129,7 +1153,7 @@ describe('Task', () => {
       expect(finallyTasks[0].workspaces.map(w => w.name)).toEqual(['workspace']);
     });
 
-    it('uses DEFAULT_GCS_CACHE_IMAGE for GCS cache steps', () => {
+    it("uses the project's injectedStepImage for GCS cache steps when the backend names none", () => {
       const app = new App();
       const chart = new Chart(app, 'test');
       const t = new Task({
@@ -1137,11 +1161,25 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [gcsCacheSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-npm-cache');
-      expect(restore.image).toBe(DEFAULT_GCS_CACHE_IMAGE);
-      expect(save.image).toBe(DEFAULT_GCS_CACHE_IMAGE);
+      expect(restore.image).toBe(CAPABLE.injectedStepImage);
+      expect(save.image).toBe(CAPABLE.injectedStepImage);
+    });
+
+    it('rejects a GCS cache whose project image does not declare gcloud', () => {
+      const t = new Task({
+        name: 'gcs-task',
+        steps: [{ name: 's', image: 'alpine' }],
+        caches: [gcsCacheSpec],
+      });
+      expect(() => t.synth(new Chart(new App(), 'test'), 'ns')).toThrow(/needs an image providing nushell, tar, zstd, gcloud/);
+      expect(() =>
+        t.synth(new Chart(new App(), 'test2'), 'ns', {
+          injectedStepImage: { image: DEFAULT_GCS_CACHE_IMAGE, provides: ['gcloud', 'nushell', 'tar', 'zstd'] },
+        }),
+      ).not.toThrow();
     });
 
     it('respects custom image override for GCS steps', () => {
@@ -1152,7 +1190,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ ...gcsCacheSpec, image: 'my-custom-image:latest' }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.image).toBe('my-custom-image:latest');
     });
@@ -1165,7 +1203,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ ...gcsCacheSpec, key: [] }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.script).toContain('"" | hash sha256');
     });
@@ -1178,7 +1216,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ ...gcsCacheSpec, workingDir: '$(workspaces.workspace.path)' }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.workingDir).toBe('$(workspaces.workspace.path)');
     });
@@ -1199,7 +1237,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [subdirSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-go-cache');
       expect(restore.script).toContain('"api/vendor"');
       expect(restore.script).toContain('"api/go.sum"');
@@ -1226,7 +1264,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [subdirSpec],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const save = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'save-go-cache');
       expect(save.script).toContain('"api/vendor"');
       expect(save.script).toContain('tar cf - ...$paths');
@@ -1256,7 +1294,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [goCache, npmCache],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const steps = chart.toJson()[0].spec.steps;
       const goRestore = steps.find((s: any) => s.name === 'restore-go-cache');
       const npmRestore = steps.find((s: any) => s.name === 'restore-npm-cache');
@@ -1277,7 +1315,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ ...gcsCacheSpec, computeResources: resources }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.computeResources).toEqual(resources);
     });
@@ -1290,7 +1328,7 @@ describe('Task', () => {
         steps: [{ name: 's', image: 'alpine' }],
         caches: [{ ...gcsCacheSpec, image: 'custom:latest' }],
       });
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
       expect(restore.image).toBe('custom:latest');
     });
@@ -1308,7 +1346,7 @@ describe('Task', () => {
           image: 'postgres:16-alpine',
           env: [{ name: 'POSTGRES_PASSWORD', value: 'test' }],
         }],
-      }).synth(chart, 'ns');
+      }).synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0] as any;
 
       expect(manifest.spec.sidecars).toHaveLength(1);
@@ -1329,7 +1367,7 @@ describe('Task', () => {
           image: 'postgres:16-alpine',
           volumeMounts: [{ name: 'pgdata', mountPath: '/var/lib/postgresql/data' }],
         }],
-      }).synth(chart, 'ns');
+      }).synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0] as any;
       expect(manifest.spec.sidecars[0].volumeMounts).toEqual([
         { name: 'pgdata', mountPath: '/var/lib/postgresql/data' },
@@ -1350,7 +1388,7 @@ describe('Task', () => {
             exec nc -lk -p 8080
           `,
         }],
-      }).synth(chart, 'ns');
+      }).synth(chart, 'ns', CAPABLE);
       const script = (chart.toJson()[0] as any).spec.sidecars[0].script as string;
       expect(script.startsWith('#!/bin/sh')).toBe(true);
       expect(script).toContain('exec nc -lk -p 8080');
@@ -1370,7 +1408,7 @@ describe('Task', () => {
           { name: 'db', image: 'postgres:16-alpine' },
           { name: 'cache', image: 'redis:7', imagePullPolicy: 'IfNotPresent' },
         ],
-      }).synth(chart, 'ns', undefined, undefined, undefined, 'Always');
+      }).synth(chart, 'ns', { defaultImagePullPolicy: 'Always' });
       const sidecars = (chart.toJson()[0] as any).spec.sidecars;
       expect(sidecars[0].imagePullPolicy).toBe('Always');
       expect(sidecars[1].imagePullPolicy).toBe('IfNotPresent');
@@ -1383,14 +1421,14 @@ describe('Task', () => {
         name: 'with-sidecar',
         steps: [{ name: 'run', image: 'alpine' }],
         sidecars: [{ name: 'db', image: 'postgres:16-alpine' }],
-      }).synth(chart, 'ns');
+      }).synth(chart, 'ns', CAPABLE);
       expect((chart.toJson()[0] as any).spec.sidecars[0].imagePullPolicy).toBeUndefined();
     });
 
     it('omits sidecars from spec when none declared', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
-      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns');
+      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0] as any;
 
       expect(manifest.spec.sidecars).toBeUndefined();
@@ -1408,7 +1446,7 @@ describe('Task', () => {
           { name: 'shared', emptyDir: {} },
           { name: 'config', configMap: { name: 'my-config' } },
         ],
-      }).synth(chart, 'ns');
+      }).synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0] as any;
 
       expect(manifest.spec.volumes).toHaveLength(2);
@@ -1419,7 +1457,7 @@ describe('Task', () => {
     it('omits volumes from spec when none declared', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
-      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns');
+      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0] as any;
 
       expect(manifest.spec.volumes).toBeUndefined();
@@ -1441,7 +1479,7 @@ describe('Task', () => {
           ],
         }],
         volumes: [{ name: 'buildkit-socket', emptyDir: {} }],
-      }).synth(chart, 'ns');
+      }).synth(chart, 'ns', CAPABLE);
       const step = chart.toJson()[0].spec.steps[0];
       expect(step.volumeMounts).toEqual([
         { name: 'buildkit-socket', mountPath: '/run/buildkit' },
@@ -1452,7 +1490,7 @@ describe('Task', () => {
     it('omits volumeMounts from step when not declared', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
-      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns');
+      new Task({ name: 'bare', steps: [{ name: 's', image: 'alpine' }] }).synth(chart, 'ns', CAPABLE);
       expect(chart.toJson()[0].spec.steps[0].volumeMounts).toBeUndefined();
     });
   });
@@ -1573,7 +1611,7 @@ describe('Task', () => {
     const stepScript = (t: Task): string => {
       const app = new App();
       const chart = new Chart(app, 'c');
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       return chart.toJson()[0].spec.steps[0].script;
     };
 
@@ -1607,7 +1645,7 @@ describe('Task', () => {
       const t = new Task({ name: 'p', steps: [{ name: 's', image: 'alpine', script: 'echo hi' }] });
       const app = new App();
       const chart = new Chart(app, 'c');
-      t.synth(chart, 'ns', undefined, undefined, 'bash');
+      t.synth(chart, 'ns', { defaultLanguage: 'bash' });
       expect(chart.toJson()[0].spec.steps[0].script.startsWith('#!/usr/bin/env bash')).toBe(true);
     });
   });
@@ -1616,7 +1654,7 @@ describe('Task', () => {
     const synthSteps = (t: Task) => {
       const app = new App();
       const chart = new Chart(app, 'c');
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       return chart.toJson()[0].spec.steps as Array<Record<string, string>>;
     };
 
@@ -1677,7 +1715,7 @@ describe('Task', () => {
     const synthTask = (t: Task) => {
       const app = new App();
       const chart = new Chart(app, 'c');
-      t.synth(chart, 'ns');
+      t.synth(chart, 'ns', CAPABLE);
       return chart.toJson().find((m: any) => m.kind === 'Task');
     };
 

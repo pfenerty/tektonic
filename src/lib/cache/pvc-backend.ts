@@ -1,5 +1,6 @@
 import type { TaskCacheSpec, TaskStepSpec } from "../core/task";
 import type { BackendCtx, CacheBackend } from "../core/cache-backend";
+import { injectedImageRef } from "../core/injected-image";
 import type { Script } from "../script";
 import {
     threadFlag,
@@ -23,7 +24,7 @@ export class PvcBackend implements CacheBackend {
     restoreStep(spec: TaskCacheSpec, ctx: BackendCtx): TaskStepSpec {
         return {
             name: `restore-${spec.name}-cache`,
-            image: spec.image ?? ctx.defaultImage,
+            image: spec.image ?? this._defaultImage(spec, ctx),
             script: this._makeRestoreScript(spec, ctx.taskName),
             ...(spec.workingDir ? { workingDir: spec.workingDir } : {}),
             ...(spec.computeResources ? { computeResources: spec.computeResources } : {}),
@@ -33,12 +34,21 @@ export class PvcBackend implements CacheBackend {
     saveStep(spec: TaskCacheSpec, ctx: BackendCtx): TaskStepSpec {
         return {
             name: `save-${spec.name}-cache`,
-            image: spec.image ?? ctx.defaultImage,
+            image: spec.image ?? this._defaultImage(spec, ctx),
             script: this._makeSaveScript(spec, ctx.taskName),
             onError: "continue" as const,
             ...(spec.workingDir ? { workingDir: spec.workingDir } : {}),
             ...(spec.computeResources ? { computeResources: spec.computeResources } : {}),
         };
+    }
+
+    /**
+     * The project's injected-step image, asking it for what this cache actually needs: a
+     * compressed cache shells out to `tar` and `zstd` from nushell, an uncompressed one is
+     * portable POSIX sh and ends at `ctx.defaultImage`.
+     */
+    private _defaultImage(spec: TaskCacheSpec, ctx: BackendCtx): string {
+        return spec.compress ? injectedImageRef("nushell", "tar", "zstd") : ctx.defaultImage;
     }
 
     private _hashFilePath(c: TaskCacheSpec, taskName?: string): string {

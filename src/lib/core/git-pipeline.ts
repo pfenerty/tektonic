@@ -5,7 +5,7 @@ import { Result } from "./result";
 import { Pipeline, PipelineOptions } from "./pipeline";
 import { GatedTask, unwrapGated } from "./pipeline-task";
 import { Condition } from "./condition";
-import { DEFAULT_BASE_IMAGE } from "../constants";
+import { injectedImageRef } from "./injected-image";
 import { sh } from "../script";
 
 /** Options for constructing a {@link GitPipeline}. */
@@ -16,8 +16,8 @@ export interface GitPipelineOptions extends PipelineOptions {
      */
     workspace?: Workspace;
     /**
-     * Container image used for the git clone step.
-     * Defaults to `ghcr.io/pfenerty/apko-cicd/base:stable`.
+     * Container image used for the git clone step. Must provide `/bin/sh` and `git`.
+     * Defaults to the project's `injectedStepImage`.
      */
     cloneImage?: string;
     /**
@@ -115,7 +115,7 @@ export class GitPipeline extends Pipeline {
             steps: [
                 {
                     name: "clone",
-                    image: opts.cloneImage ?? DEFAULT_BASE_IMAGE,
+                    image: opts.cloneImage ?? injectedImageRef("sh", "git"),
                     workingDir: workspace.path,
                     env: [
                         {

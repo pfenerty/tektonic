@@ -106,13 +106,32 @@ the pod boundary.
 Step images resolve in one order, and every backend should honour it:
 
 1. `spec.image` — the per-cache override on `TaskCacheSpec`.
-2. Your backend's own default — an `image` option on your backend, falling back to a
-   module-level constant you own (`DEFAULT_S3_CACHE_IMAGE` above).
-3. `ctx.defaultImage` — the project-level fallback, for a backend with no image needs
-   of its own.
+2. Your backend's own default — an `image` option on your backend.
+3. The project's `injectedStepImage`, reached either as `ctx.defaultImage` (which requires
+   nothing beyond `sh`) or as `injectedImageRef(...capabilities)` when your steps need more.
 
-The built-ins follow it: `PvcBackend` has no default of its own and lands on
-`ctx.defaultImage` (currently `DEFAULT_BASE_IMAGE`), while `GcsBackend` defaults to its
-own `DEFAULT_GCS_CACHE_IMAGE` — overridable per instance with
-`gcs({ bucket, image: 'ghcr.io/example/gcloud:pinned' })`, and still yielding to
-`spec.image`.
+Tektonic ships no image of its own: it generates every injected script and only expects the
+image to *provide* what that script invokes. `injectedImageRef` is how a backend says which
+interpreters and CLIs that is, so a project whose image lacks one is told at synth time:
+
+```ts
+private _image(spec: TaskCacheSpec, ctx: BackendCtx): string {
+  // nushell + zstd for the compressed path; plain `sh` needs nothing extra.
+  return spec.image ?? this.opts.image ?? (spec.compress
+    ? injectedImageRef('nushell', 'zstd', 'tar')
+    : ctx.defaultImage);
+}
+```
+
+The built-ins follow it. `PvcBackend` has no image of its own: an uncompressed cache lands on
+`ctx.defaultImage`, a compressed one asks for `nushell`/`tar`/`zstd`. `GcsBackend` asks for
+those plus `gcloud`, and yields to `gcs({ bucket, image: 'ghcr.io/example/gcloud:pinned' })`
+and then to `spec.image`. `DEFAULT_GCS_CACHE_IMAGE` is still exported as one image known to
+satisfy the GCS set:
+
+```ts
+gcs({ bucket: 'my-ci-cache', image: DEFAULT_GCS_CACHE_IMAGE })
+```
+
+A project that names no capable image gets an error at synth time naming the missing
+capability, rather than a `command not found` inside a pod minutes into a run.
