@@ -5,7 +5,6 @@ import {
     DEFAULT_STEP_SECURITY_CONTEXT,
     DEFAULT_STEP_RESOURCES,
     DEFAULT_BASE_IMAGE,
-    DEFAULT_GCS_CACHE_IMAGE,
 } from "../constants";
 import { Param } from "./param";
 import { Workspace } from "./workspace";
@@ -103,7 +102,12 @@ export interface TaskCacheSpec {
      * Required for PVC backends. Ignored when `backend` is set to GCS.
      */
     workspace?: Workspace;
-    /** Image for the injected restore/save steps. Defaults to `'alpine'`. */
+    /**
+     * Image for the injected restore/save steps. When omitted, the backend's own
+     * default is used, falling back to the project's default step image
+     * (`DEFAULT_BASE_IMAGE` for {@link PvcBackend}, `DEFAULT_GCS_CACHE_IMAGE` for
+     * {@link GcsBackend}).
+     */
     image?: string;
     /**
      * Compress the cache into a single zstd archive (`.tar.zst`) instead of copying
@@ -586,17 +590,16 @@ export class TaskDef implements TaskLike {
             ...DEFAULT_STEP_SECURITY_CONTEXT,
             ...(stepSecurityContext ?? {}),
         };
-        const ctx: BackendCtx = { defaultBaseImage: DEFAULT_BASE_IMAGE, defaultGcsCacheImage: DEFAULT_GCS_CACHE_IMAGE };
+        const ctx: BackendCtx = { taskName: this.name, defaultImage: DEFAULT_BASE_IMAGE };
         const restoreSteps = this.caches.map((c) =>
             (c.backend ?? new PvcBackend()).restoreStep(
                 this._effectiveCacheSpec(c),
-                this.name,
                 ctx,
             ),
         );
         const saveSteps = this.caches
             .filter((c) => c.saveStrategy !== "finally")
-            .map((c) => (c.backend ?? new PvcBackend()).saveStep(c, this.name, ctx));
+            .map((c) => (c.backend ?? new PvcBackend()).saveStep(c, ctx));
         // Only the user steps' names are handed to the reporter. The cache restore/save
         // steps also run with onError:'continue', so Tekton records exit codes for them
         // too — but a failed cache save must stay non-fatal, so they are excluded.
@@ -716,7 +719,7 @@ export class TaskDef implements TaskLike {
      * they run in their own pod after the build pod has terminated.
      */
     getCacheFinallyTasks(): Task[] {
-        const ctx: BackendCtx = { defaultBaseImage: DEFAULT_BASE_IMAGE, defaultGcsCacheImage: DEFAULT_GCS_CACHE_IMAGE };
+        const ctx: BackendCtx = { taskName: this.name, defaultImage: DEFAULT_BASE_IMAGE };
         return this.caches
             .filter((c) => c.saveStrategy === "finally")
             .map((c) => {
@@ -729,7 +732,7 @@ export class TaskDef implements TaskLike {
                 return new TaskDef({
                     name: `save-${c.name}-cache-${this.name}`,
                     workspaces: taskWorkspaces,
-                    steps: [backend.saveStep(c, this.name, ctx)],
+                    steps: [backend.saveStep(c, ctx)],
                     stepTemplate: this.stepTemplate,
                 });
             });

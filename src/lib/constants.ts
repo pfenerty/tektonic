@@ -57,14 +57,6 @@ export const DEFAULT_BASE_IMAGE =
     "ghcr.io/pfenerty/apko-cicd/base:stable" as const;
 
 /**
- * Container image for GCS cache restore/save steps. Provides the Google Cloud
- * SDK (gcloud storage) alongside nushell, zstd, and tar for
- * Workload Identity-authenticated GCS access without manual token management.
- */
-export const DEFAULT_GCS_CACHE_IMAGE =
-    "ghcr.io/pfenerty/apko-cicd/gcloud:563.0.0" as const;
-
-/**
  * Default CPU/memory requests and limits applied to each task step.
  * Override per-step via the `computeResources` field on `TaskStepSpec`.
  */
