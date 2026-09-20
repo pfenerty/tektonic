@@ -75,6 +75,30 @@ Run `tektonic lint` (or `npm run lint:scripts`) to syntax-check any `.sh`/`.bash
 3. Ensure `npm run build` and `npm test` pass
 4. Open a PR against `main`
 
+## Dependency updates
+
+Renovate opens the dependency PRs. Image pins are the awkward case: they live in TypeScript,
+and `.tektonic/` is synthesized from it, so the tags in the committed manifests are output.
+
+Renovate only ever saw that output. Its Ansible manager matches any `tasks/*.yaml`, so
+`.tektonic/tasks/*.k8s.yaml` was rewritten by accident of the path while the TypeScript that
+generates it stayed behind — the bumps were real, `npm run check` was red, and the next
+`npm run synth` would have reverted them.
+
+So the pins themselves are under Renovate now, through a `customManagers` regex in
+`renovate.json` covering `src/lib/cache/gcs-backend.ts`, `src/lib/constants.ts` and
+`examples/self-ci.ts`. Add a file to that list when it grows a versioned image literal; a
+floating tag such as `base:stable` is skipped, since the regex requires a leading digit.
+(`config:recommended` ignores `examples/` by default, which is why `ignorePaths` is spelled
+out in full without it.)
+
+Renovate groups every update of one image onto a single branch whatever manager found it, so
+a bump arrives as one PR carrying the source change and the manifests that follow from it.
+The `check-manifests` step in the self-CI `test-npm` task is the guard that keeps that honest:
+it runs `npm run check`, which synthesizes into a temp directory and diffs against what is
+committed, and its exit code is folded into the GitHub status. **If it fails, run
+`npm run synth` and commit the result** — the TypeScript wins, always.
+
 ## Releasing
 
 The package is published to **npmjs as `@pfenerty/tektonic`** by the `publish` GitHub Actions

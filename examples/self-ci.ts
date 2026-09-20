@@ -15,7 +15,7 @@ import {
 // ─── Images ──────────────────────────────────────────────────────────────────
 const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:22";
 const syftImage = "ghcr.io/pfenerty/apko-cicd/syft:1.42.3";
-const grypeImage = "ghcr.io/pfenerty/apko-cicd/grype:0.110.0";
+const grypeImage = "ghcr.io/pfenerty/apko-cicd/grype:0.117.0";
 
 // ─── Params ──────────────────────────────────────────────────────────────────
 // The PAC-injected params are typed handles rather than hand-declared Params plus raw
@@ -83,6 +83,23 @@ const npmTest = new Task({
                 set -e
                 if [ ! -d node_modules ]; then npm ci; fi
                 npm test
+            `,
+        },
+        {
+            // .tektonic/ is generated from this file, so its image tags are output, not
+            // source — which is exactly how Renovate came to bump the emitted YAML and
+            // leave the pins above behind (see renovate.json). `tektonic check` is the
+            // guard: it synthesizes into a temp dir and diffs against what is committed,
+            // so the manifests the cluster runs from can never quietly fall behind the
+            // code that describes them. Its exit code reaches the reporter like any
+            // other step's, so drift turns the GitHub check red.
+            name: "check-manifests",
+            image: nodeImage,
+            workingDir: "$(workspaces.workspace.path)",
+            script: sh`
+                set -e
+                if [ ! -d node_modules ]; then npm ci; fi
+                npm run check
             `,
         },
     ],
