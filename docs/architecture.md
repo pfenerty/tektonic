@@ -195,10 +195,14 @@ languages with the execute-and-assert pattern in `src/lib/script/runtime.test.ts
 
 ### `CacheBackend` (`src/lib/core/cache-backend.ts`)
 
-Returns a `restoreStep` and `saveStep` for a `TaskCacheSpec`. `needsPvcWorkspace` tells
-`TaskDef` whether to auto-register the cache workspace and wire finally-task workspaces. `PvcBackend`
-and `GcsBackend` are the built-ins; shared key-hashing/compression helpers live in
-`src/lib/cache/shared.ts`. See [cache-backends.md](cache-backends.md).
+Returns a `restoreStep` and `saveStep` for a `TaskCacheSpec`, given a `BackendCtx` that carries
+only the owning task's name and a project-level fallback image — nothing provider-specific, so a
+new backend costs the core no change. A backend needing a more specific image owns that default
+itself (`GcsBackend` does), and step images resolve `spec.image` → backend default →
+`ctx.defaultImage`. `needsPvcWorkspace` tells `TaskDef` whether to auto-register the cache
+workspace and wire finally-task workspaces. `PvcBackend` and `GcsBackend` are the built-ins;
+shared key-hashing/compression helpers live in `src/lib/cache/shared.ts`. See
+[cache-backends.md](cache-backends.md).
 
 ### `StatusReporter` (`src/lib/core/status-reporter.ts`)
 

@@ -5,7 +5,7 @@ Tektonic ships two built-in cache backends:
 | Backend | Class | Factory | Storage |
 |---|---|---|---|
 | PVC (default) | `PvcBackend` | _(no factory; omit `backend`)_ | Kubernetes PersistentVolumeClaim |
-| GCS | `GcsBackend` | `gcs({ bucket, prefix? })` | Google Cloud Storage bucket |
+| GCS | `GcsBackend` | `gcs({ bucket, prefix?, image? })` | Google Cloud Storage bucket |
 
 When `TaskCacheSpec.backend` is omitted, Tektonic uses `PvcBackend` automatically.
 
@@ -17,25 +17,40 @@ To write a custom backend, implement `CacheBackend`:
 import type { CacheBackend, BackendCtx } from '@pfenerty/tektonic';
 import type { TaskCacheSpec, TaskStepSpec } from '@pfenerty/tektonic';
 
-export class NoopBackend implements CacheBackend {
-  readonly type = 'noop';
+/** Your backend's image default lives beside your backend, not in tektonic's core. */
+const DEFAULT_S3_CACHE_IMAGE = 'ghcr.io/example/aws-cli:stable';
+
+export interface S3BackendOptions {
+  bucket: string;
+  /** Overrides {@link DEFAULT_S3_CACHE_IMAGE} for this instance. */
+  image?: string;
+}
+
+export class S3Backend implements CacheBackend {
+  readonly type = 's3';
   readonly needsPvcWorkspace = false; // true only if your backend stores data on a PVC
 
-  restoreStep(spec: TaskCacheSpec, taskName: string, ctx: BackendCtx): TaskStepSpec {
+  constructor(private readonly opts: S3BackendOptions) {}
+
+  restoreStep(spec: TaskCacheSpec, ctx: BackendCtx): TaskStepSpec {
     return {
       name: `restore-${spec.name}-cache`,
-      image: ctx.defaultBaseImage,
-      script: `#!/bin/sh\necho "[noop] cache restore skipped for ${spec.name}"`,
+      image: this.image(spec),
+      script: `#!/bin/sh\necho "[s3] restore ${spec.name} for ${ctx.taskName} from ${this.opts.bucket}"`,
     };
   }
 
-  saveStep(spec: TaskCacheSpec, taskName: string, ctx: BackendCtx): TaskStepSpec {
+  saveStep(spec: TaskCacheSpec, ctx: BackendCtx): TaskStepSpec {
     return {
       name: `save-${spec.name}-cache`,
-      image: ctx.defaultBaseImage,
-      script: `#!/bin/sh\necho "[noop] cache save skipped for ${spec.name}"`,
+      image: this.image(spec),
+      script: `#!/bin/sh\necho "[s3] save ${spec.name} for ${ctx.taskName} to ${this.opts.bucket}"`,
       onError: 'continue',
     };
+  }
+
+  private image(spec: TaskCacheSpec): string {
+    return spec.image ?? this.opts.image ?? DEFAULT_S3_CACHE_IMAGE;
   }
 }
 ```
@@ -52,7 +67,7 @@ Set it to `false` for remote-storage backends (GCS, S3, etc.) that don't need a 
 ## Using a custom backend
 
 ```typescript
-const myBackend = new NoopBackend();
+const myBackend = new S3Backend({ bucket: 'my-ci-cache' });
 
 const buildTask = new Task({
   name: 'build',
@@ -68,13 +83,36 @@ const buildTask = new Task({
 
 ## `BackendCtx`
 
-`restoreStep` and `saveStep` receive a `BackendCtx` with project-level image defaults:
+`restoreStep` and `saveStep` receive a `BackendCtx` carrying only what every backend
+needs, whatever it stores archives in:
 
 ```typescript
 interface BackendCtx {
-  defaultBaseImage: string;      // e.g. 'ghcr.io/pfenerty/apko-cicd/base:stable'
-  defaultGcsCacheImage: string;  // e.g. 'ghcr.io/pfenerty/apko-cicd/gcs-cache:stable'
+  taskName: string;      // the task this cache is attached to
+  defaultImage: string;  // project-level fallback step image
 }
 ```
 
-Use `ctx.defaultBaseImage` as your step image unless you need something more specific.
+There is deliberately nothing provider-specific in it — no bucket, no cloud SDK image.
+Adding a backend therefore requires no change to tektonic's core.
+
+`taskName` is the name of the task the cache belongs to. For a
+`saveStrategy: 'finally'` cache, which is rendered into its own pod, it is still the
+*source* task's name, so hash files written by the restore step stay addressable across
+the pod boundary.
+
+### Image resolution
+
+Step images resolve in one order, and every backend should honour it:
+
+1. `spec.image` — the per-cache override on `TaskCacheSpec`.
+2. Your backend's own default — an `image` option on your backend, falling back to a
+   module-level constant you own (`DEFAULT_S3_CACHE_IMAGE` above).
+3. `ctx.defaultImage` — the project-level fallback, for a backend with no image needs
+   of its own.
+
+The built-ins follow it: `PvcBackend` has no default of its own and lands on
+`ctx.defaultImage` (currently `DEFAULT_BASE_IMAGE`), while `GcsBackend` defaults to its
+own `DEFAULT_GCS_CACHE_IMAGE` — overridable per instance with
+`gcs({ bucket, image: 'ghcr.io/example/gcloud:pinned' })`, and still yielding to
+`spec.image`.

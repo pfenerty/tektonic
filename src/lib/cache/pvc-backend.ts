@@ -20,21 +20,21 @@ export class PvcBackend implements CacheBackend {
     readonly type = "pvc" as const;
     readonly needsPvcWorkspace = true as const;
 
-    restoreStep(spec: TaskCacheSpec, taskName: string, ctx: BackendCtx): TaskStepSpec {
+    restoreStep(spec: TaskCacheSpec, ctx: BackendCtx): TaskStepSpec {
         return {
             name: `restore-${spec.name}-cache`,
-            image: spec.image ?? ctx.defaultBaseImage,
-            script: this._makeRestoreScript(spec, taskName),
+            image: spec.image ?? ctx.defaultImage,
+            script: this._makeRestoreScript(spec, ctx.taskName),
             ...(spec.workingDir ? { workingDir: spec.workingDir } : {}),
             ...(spec.computeResources ? { computeResources: spec.computeResources } : {}),
         };
     }
 
-    saveStep(spec: TaskCacheSpec, taskName: string, ctx: BackendCtx): TaskStepSpec {
+    saveStep(spec: TaskCacheSpec, ctx: BackendCtx): TaskStepSpec {
         return {
             name: `save-${spec.name}-cache`,
-            image: spec.image ?? ctx.defaultBaseImage,
-            script: this._makeSaveScript(spec, taskName),
+            image: spec.image ?? ctx.defaultImage,
+            script: this._makeSaveScript(spec, ctx.taskName),
             onError: "continue" as const,
             ...(spec.workingDir ? { workingDir: spec.workingDir } : {}),
             ...(spec.computeResources ? { computeResources: spec.computeResources } : {}),

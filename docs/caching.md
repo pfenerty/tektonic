@@ -76,9 +76,9 @@ All fields live on `TaskCacheSpec` (the entries in a task's `caches` array):
 | `key` | required | Files whose combined content sets the cache key. `[]` = fixed hash (always hits after the first run) |
 | `paths` | required | Paths (relative to `workingDir`) to restore on hit and save on miss |
 | `workspace` | — | PVC for the archive. Required for PVC backend; ignored for GCS |
-| `backend` | PVC | `gcs({ bucket, prefix? })` or any custom `CacheBackend` |
+| `backend` | PVC | `gcs({ bucket, prefix?, image? })` or any custom `CacheBackend` |
 | `workingDir` | — | Base dir for `key`/`paths`; usually `$(workspaces.workspace.path)` |
-| `image` | base image | Image for the injected restore/save steps |
+| `image` | backend default | Image for the injected restore/save steps. Falls back to the backend's own default (GCS) or the project default image (PVC) — see [cache-backends.md](cache-backends.md#image-resolution) |
 | `compress` | `false` | Pack into one `.tar.zst` archive instead of copying file trees |
 | `compressionLevel` | `1` (PVC) / `3` (GCS) | zstd level 1–19 |
 | `multiThreadCompression` | `false` (PVC) / `true` (GCS) | `-T0` (auto threads) vs `-T1` |
