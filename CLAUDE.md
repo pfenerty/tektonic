@@ -85,6 +85,22 @@ Work is NOT complete until pushed. Before ending a session:
    git status  # must show "up to date with origin"
    ```
 
+## CI and Automation
+
+**All CI and automation runs through tektonic itself** — the pipelines in `.tektonic/`,
+synthesized from [`examples/self-ci.ts`](examples/self-ci.ts). Do not reach for GitHub
+Actions to automate something; if a job needs adding, it belongs in the self-CI pipeline.
+
+The one exemption is [`.github/workflows/publish.yml`](.github/workflows/publish.yml),
+and only because npm's trusted publishing accepts GitHub Actions, GitLab CI/CD and
+CircleCI as OIDC issuers — a self-hosted cluster cannot be a trusted publisher. That
+constraint is the whole reason it exists; nothing else inherits the exemption.
+
+Renovate is **self-hosted**, so `postUpgradeTasks` in `renovate.json` is available and is
+what re-synthesizes `.tektonic/` after an image bump. It needs `allowedCommands` in the
+self-hosted global config to admit `^npm ci` and `^npm run synth`, or the tasks are
+skipped silently.
+
 ## Codebase Context
 
 `repomix-output.xml` is a packed snapshot of the entire codebase used as AI context. It is not tracked in git. Regenerate it after significant changes:

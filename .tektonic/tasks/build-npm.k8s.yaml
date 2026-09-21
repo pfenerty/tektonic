@@ -92,7 +92,7 @@ spec:
           log $"restore-npm-cache: miss ($hash) — object not found in bucket"
         }
       workingDir: $(workspaces.workspace.path)
-    - image: ghcr.io/pfenerty/apko-cicd/nodejs:22
+    - image: ghcr.io/pfenerty/apko-cicd/nodejs:24
       name: build
       onError: continue
       script: |-
