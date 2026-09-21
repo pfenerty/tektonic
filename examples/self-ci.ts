@@ -15,7 +15,7 @@ import { GitHubStatusReporter } from "../packages/tektonic-reporter-github/dist/
 
 // ─── Images ──────────────────────────────────────────────────────────────────
 const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:22";
-const syftImage = "ghcr.io/pfenerty/apko-cicd/syft:1.42.3";
+const syftImage = "ghcr.io/pfenerty/apko-cicd/syft:1.51.0";
 const grypeImage = "ghcr.io/pfenerty/apko-cicd/grype:0.117.0";
 
 // ─── Params ──────────────────────────────────────────────────────────────────
