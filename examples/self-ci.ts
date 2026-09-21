@@ -14,7 +14,7 @@ import { gcs, DEFAULT_GCS_CACHE_IMAGE } from "../packages/tektonic-cache-gcs/dis
 import { GitHubStatusReporter } from "../packages/tektonic-reporter-github/dist/index.js";
 
 // ─── Images ──────────────────────────────────────────────────────────────────
-const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:22";
+const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:24";
 const syftImage = "ghcr.io/pfenerty/apko-cicd/syft:1.42.3";
 const grypeImage = "ghcr.io/pfenerty/apko-cicd/grype:0.117.0";
 
