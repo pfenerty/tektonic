@@ -92,7 +92,7 @@ spec:
           log $"restore-npm-cache: miss ($hash) — object not found in bucket"
         }
       workingDir: $(workspaces.workspace.path)
-    - image: ghcr.io/pfenerty/apko-cicd/nodejs:22
+    - image: ghcr.io/pfenerty/apko-cicd/nodejs:24
       name: check-lockfile
       onError: continue
       script: |-
@@ -117,7 +117,7 @@ spec:
         printf '%s' "$__tek_prev" > /tekton/home/.exit-code
         exit "$__tek_rc"
       workingDir: $(workspaces.workspace.path)
-    - image: ghcr.io/pfenerty/apko-cicd/nodejs:22
+    - image: ghcr.io/pfenerty/apko-cicd/nodejs:24
       name: test
       onError: continue
       script: |-
@@ -137,7 +137,7 @@ spec:
         printf '%s' "$__tek_prev" > /tekton/home/.exit-code
         exit "$__tek_rc"
       workingDir: $(workspaces.workspace.path)
-    - image: ghcr.io/pfenerty/apko-cicd/nodejs:22
+    - image: ghcr.io/pfenerty/apko-cicd/nodejs:24
       name: check-manifests
       onError: continue
       script: |-

@@ -17,7 +17,7 @@
     {
       "description": [
         "Image pins live in TypeScript; .tektonic/ is synthesized from it. Renovate only ever saw the output — the Ansible manager matches any tasks/*.yaml, so .tektonic/tasks/*.k8s.yaml was rewritten by accident of the path while the source that generates it stayed behind, and the next `tektonic synth` would have reverted the bump.",
-        "This manager puts the pins themselves under Renovate. Both sides of a bump land on one branch, so the PR carries the source change and the manifests that follow from it; the check-manifests step in the self-CI test-npm task fails the build if they ever disagree.",
+        "This manager puts the pins themselves under Renovate. Renovate cannot run the generator, though — postUpgradeTasks is self-hosted only — so the bump alone would leave .tektonic/ behind. The renovate-synth GitHub Actions workflow re-synthesizes and commits onto the same branch, so both sides of a bump land on one branch; the check-manifests step in the self-CI test-npm task fails the build if they ever disagree.",
         "config:recommended ignores examples/ by default, which is why ignorePaths is spelled out here without it.",
         "Add a file when it grows a versioned image literal. Unversioned tags (base:stable) are left alone by the leading digit required of currentValue."
       ],
@@ -34,6 +34,17 @@
     }
   ],
   "packageRules": [
+    {
+      "description": [
+        "One PR for every CI image pin, not one per image. Each bump has to carry the .tektonic/ manifests regenerated from it (the renovate-synth workflow does that), and a manifest re-synth touches whichever tasks use the image — so separate PRs for nodejs and syft both rewrite test-npm.k8s.yaml and anchore-scan.k8s.yaml and conflict with each other the moment one merges. Grouped, the synth runs once over the final set of pins.",
+        "separateMajorMinor is off for the same reason: these images are all built from the same apko-cicd repo and are reviewed together, and a split major PR would be a second branch racing the minor one over the same generated files."
+      ],
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["docker"],
+      "groupName": "ci images",
+      "groupSlug": "ci-images",
+      "separateMajorMinor": false
+    },
     {
       "matchPackageNames": ["vite", "vitest", "@vitest/**", "@vitejs/**"],
       "groupName": "vitest"
