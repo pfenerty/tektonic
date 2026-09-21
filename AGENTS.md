@@ -38,6 +38,16 @@ bd sync               # Sync with git
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
+## CI and Automation
+
+All CI and automation runs through tektonic itself — the pipelines in `.tektonic/`,
+synthesized from `examples/self-ci.ts`. Do not add GitHub Actions workflows. The one
+exemption is `.github/workflows/publish.yml`, which exists only because npm's trusted
+publishing cannot accept a self-hosted cluster as an OIDC issuer.
+
+Renovate is self-hosted, so `postUpgradeTasks` in `renovate.json` re-synthesizes
+`.tektonic/` after an image bump. See CLAUDE.md for the `allowedCommands` requirement.
+
 ## Cross-Repo Planning
 
 `tektonic` (`@pfenerty/tektonic`) is the TypeScript library consumed by `ocidex` (`make tekton-synth`) and `homelab/tekton-pipelines/`. It sits in the middle of the dependency chain: `apko-cicd → tektonic → ocidex/homelab`. Cross-cutting initiatives that span multiple repos are tracked in `~/code/common/` (issue prefix: `plan`).
