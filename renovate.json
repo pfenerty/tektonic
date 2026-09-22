@@ -29,6 +29,7 @@
     {
       "description": [
         "Image pins live in TypeScript; .tektonic/ is synthesized from it. Renovate only ever saw the output — the Ansible manager matches any tasks/*.yaml, so .tektonic/tasks/*.k8s.yaml was rewritten by accident of the path while the source that generates it stayed behind, and the next `tektonic synth` would have reverted the bump.",
+        "Adding this manager did not stop that one, and the Dependency Dashboard went on listing the generated manifests under `ansible`; the first packageRule below is what finally switches it off.",
         "This manager puts the pins themselves under Renovate; postUpgradeTasks above re-synthesizes the manifests that follow from them, so both sides of a bump land on one branch.",
         "config:recommended ignores examples/ by default, which is why ignorePaths is spelled out here without it.",
         "Add a file when it grows a versioned image literal. Unversioned tags (base:stable) are left alone by the leading digit required of currentValue."
@@ -46,6 +47,15 @@
     }
   ],
   "packageRules": [
+    {
+      "description": [
+        "There is no Ansible in this repository. The built-in manager matches any tasks/*.yaml, so the only thing it ever found was .tektonic/tasks/*.k8s.yaml — generated output, which it would propose editing while the TypeScript pins that produce it stayed behind, and which the next synth would revert. The custom regex manager below covers every versioned pin on the files that actually declare it.",
+        "Left on, it also splits the 'ci images' group: that rule matches custom.regex, so the ansible half of a gcloud bump would carry a different groupName than the regex half.",
+        "A packageRule rather than an ignorePaths entry for .tektonic/**, because postUpgradeTasks.fileFilters has to keep matching .tektonic/** to commit the re-synthesized manifests, and this way the two settings cannot interact. (disabledManagers would be the obvious spelling, but that option no longer exists in Renovate.)"
+      ],
+      "matchManagers": ["ansible"],
+      "enabled": false
+    },
     {
       "description": [
         "One PR for every CI image pin, not one per image. A re-synth rewrites whichever task manifests use the image, so separate PRs for nodejs and syft both rewrite test-npm.k8s.yaml and anchore-scan.k8s.yaml and conflict with each other the moment one merges. Grouped, the generator runs once over the final set of pins.",
