@@ -159,6 +159,8 @@ export interface SynthOptions {
   defaultImagePullPolicy?: ImagePullPolicy;
   /** Project-level image for injected steps, as `TektonicProject.injectedStepImage`. */
   injectedStepImage?: InjectedStepImage;
+  /** Project-level TEP-0147 provenance switch, as `TektonicProject.artifactProvenance`. */
+  artifactProvenance?: boolean;
 }
 
 /**
@@ -232,6 +234,7 @@ export function synthTask(task: TaskDef, opts: SynthOptions = {}): TaskView {
     defaultLanguage: opts.defaultLanguage,
     defaultImagePullPolicy: opts.defaultImagePullPolicy,
     injectedStepImage: opts.injectedStepImage,
+    artifactProvenance: opts.artifactProvenance,
   });
   return new TaskView(chart.toJson()[0] as Record<string, unknown>);
 }

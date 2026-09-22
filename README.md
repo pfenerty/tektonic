@@ -142,6 +142,7 @@ See [docs/cli.md](docs/cli.md).
 - [Tekton Chains](docs/chains.md) — automatic SLSA provenance: git source, image subjects, signing annotations
 - [Pipelines as Code](docs/pac.md) — `TektonicProject` and in-repo `.tekton/` pipelines
 - [Publishing to a Tekton catalog](docs/catalog.md) — `HubTarget`, catalog metadata, and the round trip with `HubTaskRef`
+- [Artifact stores & provenance](docs/artifacts.md) — where declared artifacts are stored, and TEP-0147 provenance for Chains
 - [Custom cache backends](docs/cache-backends.md) — implement the `CacheBackend` interface
 - [Status reporters](docs/status-reporters.md) — implement the `StatusReporter` interface
 - [Architecture & internals](docs/architecture.md) — how Tektonic is built (for contributors)

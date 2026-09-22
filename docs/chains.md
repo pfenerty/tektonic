@@ -75,6 +75,37 @@ expects. A downstream task can consume the built image via the pipeline referenc
 
 Use a distinct `name` per image when a task builds more than one.
 
+## Non-image subjects: artifact provenance
+
+`ChainsImage` covers the case where the thing built is an image. For anything else a task
+declares in `produces` — a release tarball, a signed bundle, an SBOM — tektonic can emit
+[TEP-0147](https://github.com/tektoncd/community/blob/main/teps/0147-tekton-artifacts-phase1.md)
+artifact provenance instead: `{uri, digest}` records in the TaskRun status, which Chains reads
+the same way.
+
+```typescript
+new TektonicProject({ namespace: 'ci', pipelines, artifactProvenance: true });
+
+new Task({
+  name: 'release',
+  workspaces: [ws],
+  steps: [build],
+  produces: {
+    bundle:   { from: 'out/release.tar.gz', buildOutput: true },  // subject
+    coverage: 'out/coverage.xml',                                 // byproduct
+  },
+});
+```
+
+`buildOutput` is the whole distinction: an output is a SLSA *byproduct* unless it is marked,
+at which point Chains treats it as a **subject**. Artifacts the task `consumes` are recorded as
+`inputs`, i.e. materials.
+
+Unlike everything else on this page, this one is **not** inert when the cluster is not set up
+for it: it is alpha upstream, so nothing reads the records unless the cluster's `feature-flags`
+ConfigMap sets `enable-artifacts: "true"`. That is why it is off by default. Details, and the
+constraint it puts on the injected step's image, are in [artifacts.md](artifacts.md#tep-0147-artifact-provenance).
+
 ## Controlling signing & transparency: annotations
 
 Chains reads a few `chains.tekton.dev/*` annotations off the runs it observes (most commonly
@@ -140,6 +171,8 @@ is in place, pipelines authored with the conventions above are signed and attest
 |----------|------------------|-----------------|
 | `GitPipeline` (default) | `CHAINS-GIT_URL` / `CHAINS-GIT_COMMIT` results | source material |
 | `ChainsImage` | `*_IMAGE_URL` / `*_IMAGE_DIGEST` results | build subject |
+| `artifactProvenance` + `produces` | TEP-0147 `outputs` in the TaskRun status | build subject (`buildOutput: true`) or byproduct |
+| `artifactProvenance` + `consumes` | TEP-0147 `inputs` in the TaskRun status | material |
 | `*.annotations` / `*.pipelineRunAnnotations` | `chains.tekton.dev/*` | signing/transparency control |
 
 References: [SLSA provenance / type hinting](https://tekton.dev/docs/chains/slsa-provenance/),

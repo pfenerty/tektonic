@@ -22,7 +22,8 @@ import {
     resolveInjectedImage,
 } from "./injected-image";
 import type { InjectedStepImage } from "./injected-image";
-import { TaskArtifact, WorkspaceArtifactStore, artifactStoreCtx } from "./artifact";
+import { ActionArtifactSource, TaskArtifact, WorkspaceArtifactStore, artifactStoreCtx } from "./artifact";
+import { artifactProvenanceStep } from "./artifact-provenance";
 import type { CatalogMetadata } from "./catalog";
 import type { ArtifactSource, ArtifactStore } from "./artifact";
 
@@ -69,6 +70,11 @@ export interface TaskSynthOptions {
      * capability the step needs. Defaults to {@link DEFAULT_INJECTED_STEP_IMAGE}.
      */
     injectedStepImage?: InjectedStepImage;
+    /**
+     * Project-level default for TEP-0147 artifact provenance, from the project's
+     * `artifactProvenance`. A task's own setting wins; `false` unless something turns it on.
+     */
+    artifactProvenance?: boolean;
 }
 
 /** Specification for a single step within a Tekton Task. */
@@ -477,6 +483,18 @@ export interface TaskOptions<AN extends string = never> {
      */
     artifactStore?: ArtifactStore;
     /**
+     * Emit TEP-0147 artifact provenance for this task's declared artifacts — a record of what
+     * it read and wrote, as `{uri, digest}` pairs in the TaskRun status, for Tekton Chains.
+     *
+     * Overrides the project's `artifactProvenance`, and off unless one of them turns it on:
+     * the upstream feature is alpha and needs the cluster's `enable-artifacts` feature flag,
+     * so a cluster without it would gain a step whose output nothing reads.
+     *
+     * This adds no transport. Which artifact is a *subject* of the attestation rather than a
+     * byproduct is {@link ArtifactSpec.buildOutput}, per artifact.
+     */
+    artifactProvenance?: boolean;
+    /**
      * Marks this task publishable to a Tekton catalog, and carries the metadata an entry
      * needs beyond the manifest itself — version, description, categories, platforms.
      *
@@ -543,6 +561,11 @@ export class TaskDef<AN extends string = never> implements TaskLike {
     readonly fanOut?: { over: Result; as: Param; from?: TaskLike };
     /** Catalog metadata, when this task is publishable. Read by catalog-publishing targets. */
     readonly catalog?: CatalogMetadata;
+    /**
+     * Whether this task emits TEP-0147 artifact provenance, overriding the project's setting.
+     * `undefined` defers to the project, which defaults to off.
+     */
+    readonly artifactProvenance?: boolean;
     /**
      * Typed handles for the artifacts this task publishes, keyed by the names `produces`
      * declared — `build.artifacts.dist`. A consumer names one in its own `consumes`.
@@ -640,14 +663,16 @@ export class TaskDef<AN extends string = never> implements TaskLike {
                 : undefined;
             for (const [name, source] of produced) {
                 // An action output only exists in this pod, so promoting one the task never
-                // composes would publish a path nothing ever wrote.
+                // composes would publish a path nothing ever wrote. Reached through the
+                // object form too, which wraps the same promoted output.
+                const from = typeof source === "object" && "from" in source ? source.from : source;
                 if (
-                    typeof source !== "string" &&
-                    !this.actions.some(a => a.name === source.action)
+                    from instanceof ActionArtifactSource &&
+                    !this.actions.some(a => a.name === from.action)
                 ) {
                     throw new Error(
                         `Task '${this.name}': artifact '${name}' promotes output ` +
-                            `'${source.output}' of action '${source.action}', which this task does ` +
+                            `'${from.output}' of action '${from.action}', which this task does ` +
                             `not compose — add the action to 'steps', or publish a path instead`,
                     );
                 }
@@ -687,6 +712,7 @@ export class TaskDef<AN extends string = never> implements TaskLike {
         this.timeout = opts.timeout;
         this.fanOut = opts.fanOut;
         this.catalog = opts.catalog;
+        this.artifactProvenance = opts.artifactProvenance;
         // Gating on a task's result (e.g. a change-detection task) auto-wires the
         // producing task into the dependency graph — no manual `needs`.
         if (opts.when instanceof Condition) {
@@ -751,6 +777,7 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             defaultLanguage: projectDefaultLanguage,
             defaultImagePullPolicy,
             injectedStepImage,
+            artifactProvenance,
         } = opts;
         const resourceName = namePrefix
             ? `${namePrefix}-${this.name}`
@@ -779,8 +806,16 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             .map((a) => a.store.fetchStep(a, artifactCtx))
             .filter((s): s is TaskStepSpec => s !== undefined);
         const publishSteps = this.produces.map((a) => a.store.publishStep(a, artifactCtx));
+        // Provenance last, and only when asked for: it digests what the producer wrote and
+        // what the consumer fetched, so both have to have happened first.
+        const provenanceStep =
+            (this.artifactProvenance ?? artifactProvenance ?? false)
+                ? [artifactProvenanceStep(this.produces, this.consumes)].filter(
+                      (s): s is TaskStepSpec => s !== undefined,
+                  )
+                : [];
         const ownStepNames = new Set(this.steps.map((s) => s.name));
-        for (const s of [...fetchSteps, ...publishSteps]) {
+        for (const s of [...fetchSteps, ...publishSteps, ...provenanceStep]) {
             if (ownStepNames.has(s.name)) {
                 throw new Error(
                     `Task '${this.name}': injected artifact step '${s.name}' collides with a ` +
@@ -796,7 +831,9 @@ export class TaskDef<AN extends string = never> implements TaskLike {
                 ? [
                       this.statusReporter.finalStep(
                           this.statusContext,
-                          [...fetchSteps, ...this.steps, ...publishSteps].map((s) => s.name),
+                          [...fetchSteps, ...this.steps, ...publishSteps, ...provenanceStep].map(
+                              (s) => s.name,
+                          ),
                       ),
                   ]
                 : [];
@@ -863,6 +900,7 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             ...fetchSteps.map((s) => renderStep(s, userCtx, reporting)),
             ...this.steps.map((s) => renderStep(s, userCtx, reporting)),
             ...publishSteps.map((s) => renderStep(s, userCtx, reporting)),
+            ...provenanceStep.map((s) => renderStep(s, userCtx, reporting)),
             ...saveSteps.map((s) => renderStep(s, libCtx, false)),
             ...reporterStep.map((s) => renderStep(s, libCtx, false)),
         ];

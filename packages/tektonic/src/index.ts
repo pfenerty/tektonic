@@ -14,7 +14,8 @@ export {
     WorkspaceArtifactStore,
     ARTIFACT_DIR,
 } from "./lib/core/artifact";
-export type { ArtifactSource, ArtifactStore, ArtifactStoreCtx } from "./lib/core/artifact";
+export type { ArtifactSource, ArtifactSpec, ArtifactStore, ArtifactStoreCtx } from "./lib/core/artifact";
+export { artifactProvenanceStep, artifactUri, ARTIFACT_PROVENANCE_STEP } from "./lib/core/artifact-provenance";
 export type {
     ActionDefinition,
     ActionCtx,

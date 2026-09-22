@@ -218,6 +218,21 @@ export interface TektonicProjectOptions {
    */
   injectedStepImage?: InjectedStepImage;
   /**
+   * Emit TEP-0147 artifact provenance for every task that declares `produces` or `consumes`.
+   *
+   * Off by default, and deliberately so: the upstream feature is alpha and only does anything
+   * on a cluster whose `feature-flags` ConfigMap sets `enable-artifacts: "true"`. Turning it
+   * on elsewhere adds a step per artifact-using task whose output no controller reads.
+   *
+   * What it produces is metadata for Tekton Chains — `{uri, digest}` records saying what each
+   * task read and wrote — not transport. Bytes move through the task's `artifactStore`, which
+   * is a separate choice. Mark the artifacts that are *subjects* of the build with
+   * `buildOutput` in their own declaration; everything else is recorded as a byproduct.
+   *
+   * A task overrides this with its own `artifactProvenance`.
+   */
+  artifactProvenance?: boolean;
+  /**
    * Default scripting language for steps whose `script` is a bare body (a
    * `{ language, body }` object or a raw string without a shebang). Individual
    * tasks override via their own `defaultLanguage`; tagged bodies always win.
@@ -372,6 +387,7 @@ export class TektonicProject {
         defaultLanguage: opts.defaultLanguage,
         defaultImagePullPolicy: opts.defaultImagePullPolicy,
         injectedStepImage: opts.injectedStepImage,
+        artifactProvenance: opts.artifactProvenance,
       });
       return chart.toJson()[0] as Record<string, unknown>;
     };

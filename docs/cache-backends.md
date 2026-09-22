@@ -42,7 +42,11 @@ exports the pieces `GcsBackend` and `PvcBackend` both use:
 | `COMPRESSED_CACHE_LANGUAGE` / `PORTABLE_CACHE_LANGUAGE` | `'nushell'` and `'sh'` — the languages the built-in paths use |
 
 These are supported API, and `@pfenerty/tektonic-cache-gcs` consumes them through the package
-root like any other caller. Use them rather than reimplementing: `stagedExtract` in particular
+root like any other caller. `cacheScript`, `threadFlag` and the language constants are useful
+to `ArtifactStore` authors too — an artifact store compresses the same way, and `threadFlag`
+is typed on the field it reads rather than on `TaskCacheSpec` so it can be called without one.
+`hashExpr` and `stagedExtract` are cache-specific: an artifact is not content-addressed, and
+has no live tree to extract over. See [artifacts.md](artifacts.md). Use them rather than reimplementing: `stagedExtract` in particular
 encodes a production failure (a restore deleting a module cache while a concurrent task
 compiled against it) that is invisible until it bites.
 

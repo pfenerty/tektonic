@@ -216,8 +216,9 @@ One external collision to state plainly: upstream Tekton calls its TEP-0147 prov
 - `Task` grows `produces` and `consumes`; `TaskArtifact` and `ActionOutput.toArtifact()` are
   new public surface.
 - Synthesis grows two injected step kinds and three new failure modes, all at synth time.
-- The RWO-PVC constraint is unchanged. Cross-node scheduling stays blocked until an
-  `ArtifactStore` lands.
+- The RWO-PVC constraint is unchanged *for the default store*. `GcsArtifactStore`
+  (tektonic-46j.15) lifts it for pipelines that opt in; `WorkspaceArtifactStore` still carries
+  it, and still should, since it needs no bucket.
 - Tektonic gains a declared producer/consumer graph for files, which is also the input a
   provenance layer would need — so C becomes cheap later, instead of being designed twice.
 
@@ -227,7 +228,16 @@ One external collision to state plainly: upstream Tekton calls its TEP-0147 prov
   tektonic-46j.14. The `ArtifactStore` seam landed with it rather than after it, because the
   acceptance criterion was a test swapping a fixture store in — which is the only thing that
   shows the shape survives a second implementation.
-- A store-backed `ArtifactStore` implementation, when cross-node scheduling or a PVC-less
-  pipeline is actually wanted.
-- Emit TEP-0147 artifact provenance for declared artifacts, feeding Tekton Chains alongside
-  the existing `ChainsImage` integration.
+- ~~A store-backed `ArtifactStore` implementation, when cross-node scheduling or a PVC-less
+  pipeline is actually wanted.~~ Done in tektonic-46j.15: `GcsArtifactStore` in
+  `@pfenerty/tektonic-cache-gcs`, sharing `cache/shared.ts`'s script and compression helpers
+  as this ADR called for, and not built on `CacheBackend`.
+- ~~Emit TEP-0147 artifact provenance for declared artifacts, feeding Tekton Chains alongside
+  the existing `ChainsImage` integration.~~ Done in tektonic-46j.15, off by default behind
+  `artifactProvenance`, with `buildOutput` per artifact. One correction to the reading above:
+  the field Tekton actually shipped is `buildOutput`, as this ADR says — the TEP's own example
+  still shows the draft name `isBuildArtifact`, which never made it into
+  `pkg/apis/pipeline/v1/artifact_types.go`. Trust the type, not the TEP text.
+- TEP-0139 "Trusted Artifacts" re-checked 2026-09-22 before building the store: still
+  `proposed`, still last updated 2023-07-27, i.e. unmoved since this ADR first read it. There
+  remains nothing upstream to wrap for byte transport.
