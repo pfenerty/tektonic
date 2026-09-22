@@ -27,14 +27,16 @@ the ceremony and stringly-typed fragility of hand-written YAML. Three principles
 
 The repository is an npm workspace of three packages. The split is not cosmetic: the two
 provider packages import nothing but `@pfenerty/tektonic`'s published surface, which is the
-only evidence that the `CacheBackend` and `StatusReporter` seams support an implementation
-written outside this repo. `scripts/check-provider-imports.mjs` fails the build on a deep
+only evidence that the `CacheBackend`, `ArtifactStore` and `StatusReporter` seams support an
+implementation written outside this repo. The GCS package holds two unrelated strategies that
+happen to share a bucket and an auth story, so its name names a subset of its contents;
+tektonic-46j.18 decides whether that survives the first publish. `scripts/check-provider-imports.mjs` fails the build on a deep
 import or a relative path from a provider into core, and `npm test` runs it first.
 
 ```
 packages/
 ├── tektonic/                    # @pfenerty/tektonic — the core library (below)
-├── tektonic-cache-gcs/          # @pfenerty/tektonic-cache-gcs — GcsBackend
+├── tektonic-cache-gcs/          # @pfenerty/tektonic-cache-gcs — GcsBackend, GcsArtifactStore
 └── tektonic-reporter-github/    # @pfenerty/tektonic-reporter-github — GitHubStatusReporter
 ```
 
@@ -294,8 +296,14 @@ synth-time checks in `Pipeline` that a consumer names an artifact something in t
 produces and that the producer is a transitive `needs` of the consumer. Those checks — not the
 copying — are what the primitive is for. `WorkspaceArtifactStore` is the in-core default and
 keeps artifacts in a per-producer subtree of the ephemeral workspace, so each subtree has one
-writer; it inherits that workspace's single-RWO-PVC constraint, which a store-backed
-implementation would lift. See [ADR 0001](adr/0001-artifacts-and-dependencies.md) and
+writer; it inherits that workspace's single-RWO-PVC constraint. `GcsArtifactStore`, in
+`@pfenerty/tektonic-cache-gcs`, is the implementation that lifts it: producer uploads, consumer
+downloads, no workspace bound on either side. An optional `uri(artifact)` lets a store name a
+location that outlives the pod, which is what artifact provenance records.
+
+Swapping between them changes no `produces`/`consumes` declaration and no handle type — the
+property the seam exists to have, and the one its tests assert. See
+[artifacts.md](artifacts.md), [ADR 0001](adr/0001-artifacts-and-dependencies.md) and
 [job-libraries.md](job-libraries.md#crossing-the-pod-boundary).
 
 ### `StatusReporter` (`src/lib/core/status-reporter.ts`)

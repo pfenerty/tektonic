@@ -41,13 +41,44 @@ export class ActionArtifactSource {
 }
 
 /**
+ * The object form of an {@link ArtifactSource}, for an artifact that needs to say more about
+ * itself than where its bytes are.
+ *
+ * Only worth reaching for when one of the extra fields applies; `produces: { dist: 'out/app.tar' }`
+ * stays the ordinary way to declare one.
+ */
+export interface ArtifactSpec {
+    /** Where the bytes are — the same string or promoted output the bare form takes. */
+    from: string | ActionArtifactSource;
+    /**
+     * Whether TEP-0147 provenance calls this artifact a *build output* rather than a
+     * by-product.
+     *
+     * This is the one bit Tekton Chains reads: an output is a SLSA byproduct unless it is
+     * marked `buildOutput`, at which point Chains treats it as a **subject** of the build —
+     * the thing the attestation is *about*. Mark the release artifact; leave coverage
+     * reports, logs and SBOM side-files alone. Defaults to `false`.
+     *
+     * Has no effect unless provenance emission is on (`artifactProvenance` on the task or
+     * the project), since it is alpha and needs the cluster's `enable-artifacts` flag.
+     */
+    buildOutput?: boolean;
+}
+
+/**
  * What a task may declare in `produces`: an action output promoted with
- * {@link ActionOutput.toArtifact}, or a path a hand-written step wrote.
+ * {@link ActionOutput.toArtifact}, a path a hand-written step wrote, or an
+ * {@link ArtifactSpec} wrapping either with extra declarations.
  *
  * A path may be absolute or relative to the step's working directory, and may name a file
  * or a directory — it is copied wholesale. Globs are not expanded: name the directory.
  */
-export type ArtifactSource = string | ActionArtifactSource;
+export type ArtifactSource = string | ActionArtifactSource | ArtifactSpec;
+
+/** Narrows an {@link ArtifactSource} to its object form. */
+function isArtifactSpec(source: ArtifactSource): source is ArtifactSpec {
+    return typeof source === "object" && !(source instanceof ActionArtifactSource);
+}
 
 /**
  * A typed handle to a file (or directory) one task publishes for another to read.
@@ -93,6 +124,11 @@ export class TaskArtifact {
     readonly publishImage?: string;
     /** Instance name of the action that produces this artifact, when it came from one. */
     readonly action?: string;
+    /**
+     * Whether TEP-0147 provenance marks this artifact a build output rather than a
+     * by-product. See {@link ArtifactSpec.buildOutput}; `false` unless the declaration said so.
+     */
+    readonly buildOutput: boolean;
 
     /** @internal Constructed by {@link TaskDef} from its `produces` declaration. */
     constructor(opts: {
@@ -113,14 +149,17 @@ export class TaskArtifact {
         this.producerName = opts.producer.name;
         this.store = opts.store;
         this.workspace = opts.workspace;
-        if (typeof opts.source === "string") {
-            this.sourcePath = opts.source;
-            this.fileName = baseName(opts.source) || opts.name;
+        const spec = isArtifactSpec(opts.source) ? opts.source : undefined;
+        const from = spec ? spec.from : (opts.source as string | ActionArtifactSource);
+        this.buildOutput = spec?.buildOutput ?? false;
+        if (typeof from === "string") {
+            this.sourcePath = from;
+            this.fileName = baseName(from) || opts.name;
         } else {
-            this.sourcePath = opts.source.path;
-            this.fileName = opts.source.fileName;
-            this.publishImage = opts.source.image;
-            this.action = opts.source.action;
+            this.sourcePath = from.path;
+            this.fileName = from.fileName;
+            this.publishImage = from.image;
+            this.action = from.action;
         }
     }
 
@@ -196,6 +235,15 @@ export interface ArtifactStore {
      * {@link path}. Return `undefined` when the store needs no step there.
      */
     fetchStep(artifact: TaskArtifact, ctx: ArtifactStoreCtx): TaskStepSpec | undefined;
+    /**
+     * Stable location the artifact can be retrieved from, for TEP-0147 artifact provenance.
+     *
+     * Optional because it is only read when provenance emission is on, and because a store
+     * that moves nothing has nothing better to say than the path: omit it and the emitter
+     * falls back to `file://` + {@link path}. A store that uploads should implement it — a
+     * `gs://…` URI is retrievable after the pod is gone, and a pod-local path is not.
+     */
+    uri?(artifact: TaskArtifact): string;
 }
 
 /**

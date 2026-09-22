@@ -26,8 +26,15 @@ export function cacheScript(body: string, language: LanguageName): Script {
     return new Script(languageFor(language), body);
 }
 
-/** Returns the zstd thread flag. Pass `defaultMulti=true` for backends that default to multi-threaded (e.g. GCS). */
-export function threadFlag(c: TaskCacheSpec, defaultMulti = false): string {
+/**
+ * Returns the zstd thread flag. Pass `defaultMulti=true` for backends that default to
+ * multi-threaded (e.g. GCS).
+ *
+ * Typed on the field it reads rather than on {@link TaskCacheSpec}, so an
+ * {@link ArtifactStore} — which compresses the same way but has no cache spec to hand —
+ * shares this instead of growing a second copy of the same two-line decision.
+ */
+export function threadFlag(c: { multiThreadCompression?: boolean }, defaultMulti = false): string {
     const multi = c.multiThreadCompression ?? defaultMulti;
     return multi ? "-T0" : "-T1";
 }
