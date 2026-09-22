@@ -59,6 +59,7 @@ src/
     │   ├── param.ts  workspace.ts  result.ts        # named handles, stringify to $(...) exprs
     │   ├── task.ts                                   # TaskDef: the synthesizable unit of work
     │   ├── action.ts                                 # Action: reusable, typed work *inside* a pod
+    │   ├── artifact.ts                               # TaskArtifact + ArtifactStore: files *across* pods
     │   ├── pipeline.ts  git-pipeline.ts             # graph discovery, validation, topo-sort
     │   ├── pipeline-task.ts                          # gated() per-edge overrides (when/retry/timeout)
     │   ├── condition.ts  changes.ts                  # typed rules DSL + onChanges detection
@@ -138,9 +139,35 @@ Crossing the *pod* boundary is explicit: `output.toResult(result)` and
 a step the author chose rather than a silent framework behaviour. `toResult` enforces Tekton's
 4KB result cap in the step instead of letting it truncate.
 
+`output.toArtifact()` is the third promotion and the declared one. It goes in the task's
+`produces` rather than its `steps`, because the workspace and store an artifact lives on are the
+task's to know, not the action's; a plain path a hand-written step wrote may be declared the
+same way. The resulting `TaskArtifact` is reached through its producer (`build.artifacts.dist`)
+and stringifies to the path the *consumer* sees, so no step body hardcodes the layout. Vocabulary
+is fixed: an **output** is always pod-internal, an **artifact** is always cross-pod, and
+`toArtifact()` is the single point where one becomes the other.
+
 `HubTaskRef` is the other "reusable unit from elsewhere", and it is job-sized: a remote catalog
 Task, one more pod in the graph. The names are kept apart on purpose — an action is pod-internal
 and never appears in the pipeline spec.
+
+### Artifacts: a declared producer/consumer graph for files
+
+`TaskDef` accepts `produces` (a record of name → source) and `consumes` (handles reached through
+their producing task). Each declaration injects one step — publish at the end of the producer,
+fetch at the start of the consumer — and both take the exit-code contract exactly as user steps
+do, so a failed handoff reaches the reported status. That is the one place they differ from cache
+steps, which run `onError: 'continue'` because a failed cache save must stay survivable.
+
+The steps are not the point; the checks in `Pipeline` are. A consumer may only name an artifact
+some task in the same pipeline produces, and the producing task must be a transitive `needs` of
+the consumer — the case that is otherwise a runtime file-not-found, reported here as a synth-time
+error that names both tasks and says which of the two mistakes it is. Declaring an artifact
+nothing consumes only warns: publishing for a human to collect is legitimate.
+
+Consuming does not create the graph edge. `needs` remains the only way to order tasks, and
+`consumes` is checked against it rather than quietly adding to it — a file dependency that
+silently reshaped the DAG would make the graph unreadable from the source.
 
 ### Dependency discovery, validation, ordering
 
@@ -194,7 +221,7 @@ new TektonicProject({
 
 ## Extension points
 
-Tektonic has four strategy interfaces. Adding a provider means implementing one — never editing
+Tektonic has five strategy interfaces. Adding a provider means implementing one — never editing
 the core. Each is exported from `index.ts`.
 
 ### `SynthTarget` (`src/lib/core/synth-target.ts`)
@@ -247,6 +274,25 @@ decide whether to bind a PVC, rather than matching on `type === 'gcs'` as it onc
 `src/lib/cache/shared.ts` are exported from the package root as supported API for backend
 authors — every backend needs the same hash semantics, and divergence there is a silent cache
 miss. See [cache-backends.md](cache-backends.md).
+
+### `ArtifactStore` (`src/lib/core/artifact.ts`)
+
+Moves the bytes behind a declared `produces`/`consumes` relationship: `path(artifact)` for what
+the consumer reads, a `publishStep` injected at the end of the producer, and a `fetchStep`
+injected at the start of the consumer (return `undefined` when the store needs none). The same
+restore/save shape as `CacheBackend`, and the same `ctx.defaultImage` resolution, deliberately —
+but a separate interface, because a cache is content-addressed and reused across runs while an
+artifact is run-scoped with exactly one writer, and forcing either through the other's contract
+distorts both.
+
+Everything above the seam is store-independent: the typed `TaskArtifact` handles, and the
+synth-time checks in `Pipeline` that a consumer names an artifact something in the pipeline
+produces and that the producer is a transitive `needs` of the consumer. Those checks — not the
+copying — are what the primitive is for. `WorkspaceArtifactStore` is the in-core default and
+keeps artifacts in a per-producer subtree of the ephemeral workspace, so each subtree has one
+writer; it inherits that workspace's single-RWO-PVC constraint, which a store-backed
+implementation would lift. See [ADR 0001](adr/0001-artifacts-and-dependencies.md) and
+[job-libraries.md](job-libraries.md#crossing-the-pod-boundary).
 
 ### `StatusReporter` (`src/lib/core/status-reporter.ts`)
 

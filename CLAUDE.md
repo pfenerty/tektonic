@@ -54,6 +54,21 @@ Two things worth knowing:
   that: after any merge or rebase that touches `.beads/issues.jsonl`, check the file
   against the branch you merged (`git show <other>:.beads/issues.jsonl`) before trusting
   `bd ready`, and re-import anything the merge dropped.
+- **The database can also be stale with no merge involved, so check it at session start.**
+  A cloud container once came up with a database *behind* the committed JSONL: `bd list`
+  showed every child of an epic open and had never heard of four issues the file carried,
+  and `bd ready` offered work that shipped weeks earlier. Nothing warns you, and
+  `bd doctor` does not compare the two. Treat the committed file as the source of truth
+  and reconcile before trusting `bd ready`:
+
+  ```bash
+  bd import .beads/issues.jsonl     # upsert; prints what it changed
+  ```
+
+  Do this **before** claiming anything. `bd import` skips rows the local database has a
+  *newer* copy of — it says so only as a passing `(1 stale skipped)` — so if you have
+  already touched an issue this session, that row stays wrong. `bd import --allow-stale`
+  restores it from the file.
 - **Never run a bare `bd init` in a checkout that already has beads.** It rewrites
   `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` and the git hooks, and commits the
   result. The hook uses `--skip-agents --skip-hooks --from-jsonl` and reverts the
@@ -81,6 +96,18 @@ bd close <id>                         # mark done AFTER committing
 **Critical:** `bd close` without a prior `git commit` leaves changes stranded on disk.
 Always include the issue ID in the commit message (e.g. `feat: add source-branch param (tektonic-wq6)`).
 
+**`bd update --notes` REPLACES the notes field — it does not append.** Issue notes here
+accumulate the audit trail that makes a blocked issue resumable, and a single `--notes`
+wipes all of it with only a warning on stderr. Use `--append-notes` to add to them:
+
+```bash
+bd update <id> --append-notes "what you found"   # adds, newline-separated
+bd update <id> --notes "..."                     # destroys what was there
+```
+
+If you do clobber a set of notes, recover them from the committed JSONL — that copy is
+whatever was last exported: `python3 -c "import json;[print(json.loads(l)['notes']) for l in open('.beads/issues.jsonl') if json.loads(l)['id']=='<id>']"`.
+
 Issue types: `bug`, `feature`, `task`, `epic`, `chore`
 Priorities: `0`=critical, `1`=high, `2`=medium (default), `3`=low, `4`=backlog
 
@@ -107,6 +134,21 @@ The one exemption is [`.github/workflows/publish.yml`](.github/workflows/publish
 and only because npm's trusted publishing accepts GitHub Actions, GitLab CI/CD and
 CircleCI as OIDC issuers — a self-hosted cluster cannot be a trusted publisher. That
 constraint is the whole reason it exists; nothing else inherits the exemption.
+
+**`.github/` holds that one file and nothing else**, and the exemption has already been
+tested once: a `renovate-synth.yml` workflow was written to re-synthesize `.tektonic/`
+after an image bump, then rejected (tektonic-4p3) because self-hosted Renovate's
+`postUpgradeTasks` does the same job inside the rule. If you find yourself reaching for a
+second workflow, that is the precedent — solve it in `examples/self-ci.ts`, in
+`renovate.json`, or in the cluster.
+
+**An agent session cannot write under `.github/workflows/` at all.** Both routes are
+refused for want of `workflow` scope — `git push` with *refusing to allow an OAuth App to
+create or update workflow … without `workflow` scope*, and the GitHub API with
+*Insufficient scope: required "repo workflow"* — on tokens that create branches and write
+every other path fine. Do not plan work that depends on such a change landing in-session:
+write the patch, verify it, put the exact content in the issue, and hand it to a human.
+tektonic-46j.11 is the open instance of this, confirmed four times.
 
 Renovate is **self-hosted**, so `postUpgradeTasks` in `renovate.json` is available and is
 what re-synthesizes `.tektonic/` after an image bump. It needs `allowedCommands` in the

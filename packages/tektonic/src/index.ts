@@ -6,6 +6,15 @@ export type { WorkspaceOptions } from "./lib/core/workspace";
 export { Task, TaskDef } from "./lib/core/task";
 export type { TaskLike, TaskOptions, TaskStepSpec, TaskStepInput, TaskCacheSpec, TaskSidecarSpec, TaskVolumeSpec, ImagePullPolicy, TaskSynthOptions } from "./lib/core/task";
 export { defineAction, Action, ActionOutput, ACTION_OUTPUT_DIR, ACTION_VOLUME_NAME } from "./lib/core/action";
+// Artifacts: the declared, cross-pod counterpart of an action's pod-internal outputs.
+// See docs/adr/0001-artifacts-and-dependencies.md.
+export {
+    TaskArtifact,
+    ActionArtifactSource,
+    WorkspaceArtifactStore,
+    ARTIFACT_DIR,
+} from "./lib/core/artifact";
+export type { ArtifactSource, ArtifactStore, ArtifactStoreCtx } from "./lib/core/artifact";
 export type {
     ActionDefinition,
     ActionCtx,

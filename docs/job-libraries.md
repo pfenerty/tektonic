@@ -122,6 +122,69 @@ result and the workspace are contributed upward, so neither has to be restated o
 be truncated; `toWorkspace` is the route for anything larger. The copy runs in the producing
 action's image by default (the pod is already pulling it); pass `{ image }` to override.
 
+There is a third promotion, `toArtifact()`, which adds the thing the other two lack: a
+*declaration*. It goes in the task's `produces` rather than its `steps`, because only the task
+knows which workspace the artifact should live on:
+
+```typescript
+const build = new Task({
+  name: 'build',
+  workspaces: [workspace],
+  steps: [compile],
+  produces: {
+    dist: compile.outputs.bundle.toArtifact(),  // an action output, promoted
+    report: 'target/report.xml',                // or a path a hand-written step wrote
+  },
+});
+
+const test = new Task({
+  name: 'test',
+  needs: [build],                          // the edge is yours to declare
+  consumes: [build.artifacts.dist],        // …and this is checked against it
+  steps: [{ name: 'run', image, script: sh`tar xf ${build.artifacts.dist}` }],
+});
+```
+
+`build.artifacts.dist` is a `TaskArtifact`: it stringifies to the path the *consumer* reads, so
+no step body hardcodes the layout. Tektonic injects a publish step at the end of the producer
+and a fetch step at the start of the consumer, and then checks, at synth time:
+
+- a consumer may only name an artifact some task in the same pipeline produces;
+- the producing task must be a transitive `needs` of the consumer. Consuming does not create
+  the edge — this is the check that catches "declared, but not ordered", which is a runtime
+  file-not-found without it;
+- an artifact declared and never consumed is a warning, not an error. Publishing something for
+  a human to collect is legitimate.
+
+Unlike a cache save, a failed publish or fetch fails the task: a cache is an optimisation, an
+artifact is a handoff a downstream task is counting on.
+
+#### Which one to reach for
+
+| | carries | lifetime | declared? |
+|---|---|---|---|
+| `toResult(r)` | ≤4KB of text — a SHA, a tag, a boolean | the run | yes, as a Tekton result |
+| `toArtifact()` | a file or directory of any size | the run | **yes** — producer and consumers are named and checked |
+| `toWorkspace(ws)` | a file of any size | the run | no |
+
+Take `toResult` when the value is small and you want it in `when` clauses, `fanOut` or another
+task's params. Take `toArtifact` whenever another task in the pipeline reads the file — that is
+the common case, and the declaration is what buys you a synth-time error instead of a runtime
+one. `toWorkspace` remains the undeclared escape hatch for a file nobody in this pipeline
+consumes: something a human downloads, or a tree an out-of-band process picks up.
+
+Where the bytes actually go is a separate concern, behind `ArtifactStore`. The default
+`WorkspaceArtifactStore` keeps them in a per-producer subtree of the workspace the pipeline
+already binds — one writer per subtree, unlike a bare agreed-upon path. Setting
+`artifactStore` swaps the transport without touching the declaration, the handle types or the
+checks above. The reasoning, and the options that lost, are in
+[ADR 0001](adr/0001-artifacts-and-dependencies.md).
+
+One vocabulary rule, worth stating because the two words are easy to swap: an **output** is
+always pod-internal (`ActionOutput`, an `emptyDir` shared by the steps of one task), and an
+**artifact** is always cross-pod (`TaskArtifact`). `toArtifact()` is the single point where one
+becomes the other.
+
 ### What an action may not do
 
 An action's steps are ordinary steps by the time they synthesize, so they take the step

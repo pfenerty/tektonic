@@ -1,6 +1,6 @@
 # ADR 0001 — An artifacts/dependencies primitive
 
-- **Status**: accepted (spike outcome, no code yet)
+- **Status**: accepted; option A implemented in tektonic-46j.14
 - **Issue**: tektonic-46j.8
 - **Date**: 2026-09-22
 
@@ -223,8 +223,11 @@ One external collision to state plainly: upstream Tekton calls its TEP-0147 prov
 
 ## Follow-up work
 
-- Implement option A (`produces`/`consumes`, `TaskArtifact`, the synth-time checks).
-- `ArtifactStore` seam + a store-backed implementation, when cross-node scheduling or a
-  PVC-less pipeline is actually wanted.
+- ~~Implement option A (`produces`/`consumes`, `TaskArtifact`, the synth-time checks).~~ Done in
+  tektonic-46j.14. The `ArtifactStore` seam landed with it rather than after it, because the
+  acceptance criterion was a test swapping a fixture store in — which is the only thing that
+  shows the shape survives a second implementation.
+- A store-backed `ArtifactStore` implementation, when cross-node scheduling or a PVC-less
+  pipeline is actually wanted.
 - Emit TEP-0147 artifact provenance for declared artifacts, feeding Tekton Chains alongside
   the existing `ChainsImage` integration.

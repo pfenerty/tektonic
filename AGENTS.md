@@ -12,7 +12,7 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
-## The issue graph can be silently wrong after a merge
+## The issue graph can be silently wrong
 
 `bd import` is upsert, but `git merge` is not. Merging a branch whose `.beads/issues.jsonl`
 predates other issue activity overwrites the file wholesale, and the closures and issues it
@@ -27,6 +27,31 @@ uninstalled. Tracked as **tektonic-1cz**.
 Until it is fixed: after any merge or rebase touching `.beads/issues.jsonl`, diff the file
 against the branch you merged (`git show <other>:.beads/issues.jsonl`) before trusting
 `bd ready`, and re-import anything the merge dropped.
+
+**A merge is not the only way.** A cloud container once started with a database *behind* the
+committed JSONL — no merge involved — and `bd ready` offered work that had shipped weeks
+earlier. `bd doctor` does not compare the two, so nothing catches it. Reconcile at session
+start, before claiming anything:
+
+```bash
+bd import .beads/issues.jsonl      # upsert; prints what it changed
+```
+
+`bd import` **skips rows the local database has a newer copy of**, mentioning it only as
+`(1 stale skipped)`. If you have already touched an issue this session, that row stays wrong —
+`bd import --allow-stale` restores it from the file.
+
+## `bd update --notes` replaces, it does not append
+
+Issue notes here carry the audit trail that makes a blocked issue resumable, and one `--notes`
+wipes all of it with nothing but a stderr warning. Use `--append-notes`:
+
+```bash
+bd update <id> --append-notes "what you found"   # adds, newline-separated
+bd update <id> --notes "..."                     # destroys what was there
+```
+
+Recover a clobbered set from the committed JSONL, which holds whatever was last exported.
 
 ## Landing the Plane (Session Completion)
 
@@ -59,7 +84,12 @@ against the branch you merged (`git show <other>:.beads/issues.jsonl`) before tr
 All CI and automation runs through tektonic itself — the pipelines in `.tektonic/`,
 synthesized from `examples/self-ci.ts`. Do not add GitHub Actions workflows. The one
 exemption is `.github/workflows/publish.yml`, which exists only because npm's trusted
-publishing cannot accept a self-hosted cluster as an OIDC issuer.
+publishing cannot accept a self-hosted cluster as an OIDC issuer. `.github/` holds that
+one file and nothing else; a second workflow was proposed and rejected (tektonic-4p3).
+
+An agent session cannot write under `.github/workflows/` — neither `git push` nor the
+GitHub API will, for want of `workflow` scope. Write the patch, verify it, record the
+exact content on the issue, and hand it to a human. See CLAUDE.md.
 
 Renovate is self-hosted, so `postUpgradeTasks` in `renovate.json` re-synthesizes
 `.tektonic/` after an image bump. See CLAUDE.md for the `allowedCommands` requirement.
@@ -71,7 +101,7 @@ Renovate is self-hosted, so `postUpgradeTasks` in `renovate.json` re-synthesizes
 - `bd list` here shows only this repo's issues — cross-repo hydration is not yet implemented in beads
 - **Unified view:** `flox activate -d ~/code/ocidex -- nu ~/code/common/bd-all.nu`
 - To create a cross-repo parent epic: `cd ~/code/common && bd create --title="..." --type=epic`
-- When a local issue is part of a cross-repo initiative: `bd update <id> --notes "Parent epic: plan/<id>"`
+- When a local issue is part of a cross-repo initiative: `bd update <id> --append-notes "Parent epic: plan/<id>"` (`--notes` would replace the issue's existing notes)
 - Changes here typically propagate downstream: bump the npm dep in `ocidex` and `homelab/tekton-pipelines/`, then re-synth
 
 

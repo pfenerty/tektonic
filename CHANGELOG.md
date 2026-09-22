@@ -5,6 +5,61 @@ This file starts at the first change after 2.0.0; earlier history is in the git 
 
 ## Unreleased
 
+### Added: artifacts — a declared producer/consumer relationship for files
+
+A task may now declare the files it publishes and the files it reads, and tektonic checks the
+wiring at synth time:
+
+```typescript
+const build = new Task({
+  name: 'build',
+  workspaces: [workspace],
+  steps: [compile],
+  produces: { dist: compile.outputs.bundle.toArtifact(), report: 'target/report.xml' },
+});
+
+const test = new Task({
+  name: 'test',
+  needs: [build],
+  consumes: [build.artifacts.dist],
+  steps: [{ name: 'run', image, script: sh`tar xf ${build.artifacts.dist}` }],
+});
+```
+
+`build.artifacts.dist` is a `TaskArtifact`: it stringifies to the path the *consumer* reads, so
+no step body hardcodes the storage layout. A publish step is injected at the end of the
+producer and a fetch step at the start of the consumer.
+
+The copying is incidental; the declaration is the product. Three things now fail or warn at
+synth time that were a runtime file-not-found before:
+
+- consuming an artifact no task in the pipeline produces — an error naming the artifact and the
+  consumer;
+- consuming one whose producer is *present but not ordered first* — a separate error that says
+  so, because "missing" and "unordered" are different mistakes with different fixes. Consuming
+  does not create the edge: `needs` is still the only way to order tasks, and `consumes` is
+  checked against it rather than quietly reshaping the graph;
+- declaring an artifact nothing consumes — a warning, not an error. Publishing for a human to
+  collect is legitimate.
+
+Unlike a failed cache save, a failed publish or fetch fails the task, and in a reporting task
+it reaches the reported status: a cache is an optimisation, an artifact is a handoff a
+downstream task is counting on.
+
+Where the bytes go is behind a new `ArtifactStore` seam, the fifth strategy interface.
+`WorkspaceArtifactStore` is the default and keeps them in a per-producer subtree of the
+workspace the pipeline already binds — one writer per subtree, which a bare agreed-upon path
+does not give you. Setting `artifactStore` swaps the transport without touching the
+declaration, the handle types or the checks.
+
+`toWorkspace()` is unchanged and stays the undeclared escape hatch for a file nobody in the
+pipeline consumes. New API: `TaskOptions.produces`/`consumes`/`artifactWorkspace`/
+`artifactStore`, `TaskDef.artifacts`, `TaskArtifact`, `ActionOutput.toArtifact()`,
+`ArtifactStore`, `ArtifactStoreCtx`, `WorkspaceArtifactStore`, `ARTIFACT_DIR`. Nothing is
+removed and no existing synthesis changes. See
+[docs/adr/0001-artifacts-and-dependencies.md](docs/adr/0001-artifacts-and-dependencies.md) for
+the design and the options that lost.
+
 ### Breaking: the GCS backend and the GitHub reporter are separate packages
 
 `GcsBackend`/`gcs`/`DEFAULT_GCS_CACHE_IMAGE` and `GitHubStatusReporter`/`statusParam` are no
