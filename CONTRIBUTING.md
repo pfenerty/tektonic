@@ -150,6 +150,27 @@ GitHub Actions, GitLab CI/CD and CircleCI as OIDC issuers; a self-hosted cluster
 trusted publisher (npm lists self-hosted runner support as planned). Everything else — test,
 build, SBOM and vulnerability scan — still runs in Tekton on push and pull request.
 
+### The git ref is not an install channel
+
+`npm install github:pfenerty/tektonic` worked before the workspace split and **must not be
+suggested as a fallback while the packages are unpublished.** It does not fail — which is the
+problem:
+
+```
+npm install github:pfenerty/tektonic
+# -> added 1 package: node_modules/tektonic-workspace
+# -> no dist/, no bin, require.resolve('@pfenerty/tektonic') throws
+```
+
+The ref resolves to the repository root, which is now the private `tektonic-workspace` package:
+no `main`, no `exports`, no `bin`, and none of the `prepare: npm run build` that made the git
+ref work when the root *was* `@pfenerty/tektonic`. npm has no way to install a subdirectory of
+a git dependency, so there is no ref that reaches `packages/tektonic` either. The install
+reports success and leaves the consumer with nothing.
+
+So until the first release is cut, the only way to consume tektonic is to build from a clone.
+The registry is the channel; the git ref is not, and the README says so.
+
 ### Cutting a release
 
 1. Bump `version` in **every** `packages/*/package.json` to the same value, along with the

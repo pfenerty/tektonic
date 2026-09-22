@@ -59,7 +59,12 @@ against the branch you merged (`git show <other>:.beads/issues.jsonl`) before tr
 All CI and automation runs through tektonic itself — the pipelines in `.tektonic/`,
 synthesized from `examples/self-ci.ts`. Do not add GitHub Actions workflows. The one
 exemption is `.github/workflows/publish.yml`, which exists only because npm's trusted
-publishing cannot accept a self-hosted cluster as an OIDC issuer.
+publishing cannot accept a self-hosted cluster as an OIDC issuer. `.github/` holds that
+one file and nothing else; a second workflow was proposed and rejected (tektonic-4p3).
+
+An agent session cannot write under `.github/workflows/` — neither `git push` nor the
+GitHub API will, for want of `workflow` scope. Write the patch, verify it, record the
+exact content on the issue, and hand it to a human. See CLAUDE.md.
 
 Renovate is self-hosted, so `postUpgradeTasks` in `renovate.json` re-synthesizes
 `.tektonic/` after an image bump. See CLAUDE.md for the `allowedCommands` requirement.

@@ -108,6 +108,21 @@ and only because npm's trusted publishing accepts GitHub Actions, GitLab CI/CD a
 CircleCI as OIDC issuers — a self-hosted cluster cannot be a trusted publisher. That
 constraint is the whole reason it exists; nothing else inherits the exemption.
 
+**`.github/` holds that one file and nothing else**, and the exemption has already been
+tested once: a `renovate-synth.yml` workflow was written to re-synthesize `.tektonic/`
+after an image bump, then rejected (tektonic-4p3) because self-hosted Renovate's
+`postUpgradeTasks` does the same job inside the rule. If you find yourself reaching for a
+second workflow, that is the precedent — solve it in `examples/self-ci.ts`, in
+`renovate.json`, or in the cluster.
+
+**An agent session cannot write under `.github/workflows/` at all.** Both routes are
+refused for want of `workflow` scope — `git push` with *refusing to allow an OAuth App to
+create or update workflow … without `workflow` scope*, and the GitHub API with
+*Insufficient scope: required "repo workflow"* — on tokens that create branches and write
+every other path fine. Do not plan work that depends on such a change landing in-session:
+write the patch, verify it, put the exact content in the issue, and hand it to a human.
+tektonic-46j.11 is the open instance of this, confirmed four times.
+
 Renovate is **self-hosted**, so `postUpgradeTasks` in `renovate.json` is available and is
 what re-synthesizes `.tektonic/` after an image bump. It needs `allowedCommands` in the
 self-hosted global config to admit `^npm ci` and `^npm run synth`, or the tasks are

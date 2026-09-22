@@ -59,9 +59,17 @@ npm install @pfenerty/tektonic cdk8s constructs
 npm install @pfenerty/tektonic-cache-gcs @pfenerty/tektonic-reporter-github
 ```
 
-Published to npmjs as public packages — no registry configuration or auth needed. Releases are
-cut by tagging `vX.Y.Z`, published through npm trusted publishing (OIDC, with a provenance
-attestation and no stored token); see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
+Once published these need no registry configuration or auth. Releases are cut by tagging
+`vX.Y.Z`, published through npm trusted publishing (OIDC, with a provenance attestation and no
+stored token); see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
+
+> **Not on the registry yet.** No version of any of the three has been published —
+> `npm view @pfenerty/tektonic` is a 404 and the newest tag is `v1.4.0`. The install above is
+> the channel to use *once the first release is cut*; today it fails. The git ref that worked
+> before the workspace split (`npm install github:pfenerty/tektonic`) is not a fallback and is
+> no longer supported: it now resolves to the private workspace root and installs nothing
+> usable — see [CONTRIBUTING.md](CONTRIBUTING.md#the-git-ref-is-not-an-install-channel).
+> Until then, build from a clone. Tracked in tektonic-46j.12.
 
 ## Quick example
 
