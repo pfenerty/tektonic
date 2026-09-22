@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { taskPreset } from './task-preset';
+import { Task } from './task';
 import { Param } from './param';
 import { Workspace } from './workspace';
 import { TestStatusReporter } from '../../__fixtures__/reporter';
@@ -83,5 +84,37 @@ describe('taskPreset', () => {
     const view = synthTask(task, { namespace: 'ci', injectedStepImage: 'ghcr.io/example/ci-base:test' });
     expect(view.stepNames).toEqual(['test', 'report-status']);
     expect(view.script('test')).toContain('go test ./...');
+  });
+});
+
+describe('taskPreset and artifacts', () => {
+  it('carries a project-wide artifact store and workspace onto the tasks it builds', () => {
+    const shared = new Workspace({ name: 'shared' });
+    const ciTask = taskPreset({ workspaces: [shared], artifactWorkspace: shared });
+    const build = ciTask({
+      name: 'build',
+      steps: [{ name: 'compile', image: 'alpine', script: sh`true` }],
+      produces: { dist: 'out/app.tar' },
+    });
+    // The typed handle survives the preset: `dist` is a name, not a string lookup.
+    expect(build.artifacts.dist.workspace).toBe(shared);
+    expect(build.artifacts.dist.producer).toBe(build);
+  });
+
+  it('concatenates the preset’s consumes with the call’s', () => {
+    const shared = new Workspace({ name: 'shared' });
+    const producer = new Task({
+      name: 'build',
+      workspaces: [shared],
+      steps: [{ name: 'compile', image: 'alpine', script: sh`true` }],
+      produces: { dist: 'out/app.tar' },
+    });
+    const ciTask = taskPreset({ workspaces: [shared], consumes: [producer.artifacts.dist] });
+    const test = ciTask({
+      name: 'test',
+      needs: [producer],
+      steps: [{ name: 'run', image: 'alpine', script: sh`true` }],
+    });
+    expect(test.consumes).toEqual([producer.artifacts.dist]);
   });
 });

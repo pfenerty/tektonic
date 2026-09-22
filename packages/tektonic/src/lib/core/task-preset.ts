@@ -10,8 +10,14 @@ import type { Workspace } from './workspace';
  * Everything {@link TaskOptions} accepts except `name` and `steps`, which identify the task
  * and therefore always come from the call, plus {@link TaskPresetDefaults.step} for defaults
  * that belong on each step rather than the task.
+ *
+ * `produces` is excluded too: an artifact names a file one particular task writes, so a
+ * preset stamping the same declaration onto every task it builds could only be wrong.
+ * `artifactStore` and `artifactWorkspace` are *not* excluded — those are exactly the
+ * project-wide conventions a preset exists to state once.
  */
-export interface TaskPresetDefaults extends Omit<Partial<TaskOptions>, 'name' | 'steps'> {
+export interface TaskPresetDefaults
+  extends Omit<Partial<TaskOptions>, 'name' | 'steps' | 'produces'> {
   /**
    * Fields merged into every step of the built task — `computeResources`, `env`, `image`,
    * a `securityContext`. A step's own value wins per field, and `env` merges by name.
@@ -50,8 +56,9 @@ function mergeNamed<T extends { name: string }>(base: T[] = [], extra: T[] = [])
  *
  * Merge rules — the call always wins:
  * - `name` and `steps` come from the call; the preset cannot supply them.
- * - `params`, `workspaces`, `needs`, `caches`, `sidecars`, `volumes`: preset entries first,
- *   then the call's; params, workspaces, caches, sidecars and volumes dedupe by name.
+ * - `params`, `workspaces`, `needs`, `caches`, `sidecars`, `volumes`, `consumes`: preset
+ *   entries first, then the call's; params, workspaces, caches, sidecars and volumes dedupe
+ *   by name.
  * - `stepTemplate` and `annotations`: shallow-merged, the call winning per key.
  * - everything else scalar (`statusReporter`, `when`, `timeout`, …): the call's value when it
  *   is defined, else the preset's.
@@ -72,10 +79,12 @@ function mergeNamed<T extends { name: string }>(base: T[] = [], extra: T[] = [])
  * const test = ciTask({ name: 'test', steps: [{ name: 'test', image: goImage, script: sh`go test ./...` }] });
  * ```
  */
-export function taskPreset(defaults: TaskPresetDefaults): (opts: TaskOptions) => TaskDef {
+export function taskPreset(
+  defaults: TaskPresetDefaults,
+): <AN extends string = never>(opts: TaskOptions<AN>) => TaskDef<AN> {
   const { step: stepDefaults, ...taskDefaults } = defaults;
 
-  return (opts: TaskOptions): TaskDef => {
+  return <AN extends string = never>(opts: TaskOptions<AN>): TaskDef<AN> => {
     const withDefaults = (step: TaskStepSpec): TaskStepSpec => {
       if (!stepDefaults) return step;
       return {
@@ -94,10 +103,11 @@ export function taskPreset(defaults: TaskPresetDefaults): (opts: TaskOptions) =>
       step instanceof Action ? step._withSteps(withDefaults) : withDefaults(step),
     );
 
-    return new TaskDef({
+    return new TaskDef<AN>({
       ...taskDefaults,
       ...opts,
       steps,
+      consumes: [...(taskDefaults.consumes ?? []), ...(opts.consumes ?? [])],
       params: mergeNamed<Param>(taskDefaults.params, opts.params),
       workspaces: mergeNamed<Workspace>(taskDefaults.workspaces, opts.workspaces),
       needs: [...(taskDefaults.needs ?? []), ...(opts.needs ?? [])],

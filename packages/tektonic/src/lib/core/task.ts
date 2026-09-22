@@ -22,6 +22,8 @@ import {
     resolveInjectedImage,
 } from "./injected-image";
 import type { InjectedStepImage } from "./injected-image";
+import { TaskArtifact, WorkspaceArtifactStore, artifactStoreCtx } from "./artifact";
+import type { ArtifactSource, ArtifactStore } from "./artifact";
 
 /**
  * Kubernetes image pull policy.
@@ -340,8 +342,13 @@ export interface TaskLike {
  */
 export type TaskStepInput = TaskStepSpec | Action<string>;
 
-/** Options for constructing a {@link TaskDef}. */
-export interface TaskOptions {
+/**
+ * Options for constructing a {@link TaskDef}.
+ *
+ * `AN` is the set of artifact names the task declares in `produces`; it is inferred, and
+ * surfaces as the keys of {@link TaskDef.artifacts}.
+ */
+export interface TaskOptions<AN extends string = never> {
     /** Task name used in Tekton manifests and pipeline task references. */
     name: string;
     /** Parameters accepted by this task. */
@@ -423,6 +430,51 @@ export interface TaskOptions {
      * `from` when the result's producer can't be inferred from `over.owner`.
      */
     fanOut?: { over: Result; as: Param; from?: TaskLike };
+    /**
+     * Files this task publishes for other tasks in the pipeline to read, as
+     * `logicalName: source`. Each becomes a typed {@link TaskArtifact} on
+     * {@link TaskDef.artifacts}, which a consumer names in its own `consumes`.
+     *
+     * A source is either an {@link ActionOutput} promoted with `.toArtifact()`, or a path a
+     * hand-written step wrote — absolute, or relative to the step's working directory. A
+     * publish step is injected after this task's steps; nothing else moves.
+     *
+     * ```ts
+     * const build = new Task({
+     *   name: 'build',
+     *   workspaces: [ws],
+     *   steps: [compile],
+     *   produces: { dist: 'target/app.tar', report: compile.outputs.junit.toArtifact() },
+     * });
+     * ```
+     *
+     * Declaring an artifact nothing consumes is legitimate — publishing for a human to
+     * collect — and warns rather than failing.
+     */
+    produces?: Record<AN, ArtifactSource>;
+    /**
+     * Artifacts this task reads, named through their producing task —
+     * `consumes: [build.artifacts.dist]`.
+     *
+     * A fetch step is injected before this task's steps, and synthesis fails when the
+     * producing task is absent from the pipeline or is not a transitive `needs` of this one.
+     * That ordering check is the point: it turns a runtime file-not-found into a synth-time
+     * error naming both tasks. Consuming does not create the edge — declare it in `needs`.
+     */
+    consumes?: TaskArtifact[];
+    /**
+     * Workspace `produces` publishes onto. Defaults to this task's only workspace; required
+     * when it has more than one, since the choice is otherwise arbitrary. Ignored by a store
+     * that keeps artifacts elsewhere.
+     */
+    artifactWorkspace?: Workspace;
+    /**
+     * Where this task's artifacts are stored. Defaults to {@link WorkspaceArtifactStore} —
+     * a per-producer subtree of the workspace the pipeline already binds. Set an out-of-tree
+     * store to keep them somewhere else; the declaration, the ordering check and the handle
+     * types are unaffected. See docs/adr/0001-artifacts-and-dependencies.md.
+     */
+    artifactStore?: ArtifactStore;
 }
 
 /**
@@ -436,7 +488,7 @@ export interface TaskOptions {
  * All steps inherit a secure-by-default `stepTemplate` that drops all
  * capabilities and enables seccomp. Override via the `stepTemplate` option.
  */
-export class TaskDef implements TaskLike {
+export class TaskDef<AN extends string = never> implements TaskLike {
     readonly synthesizable = true as const;
     readonly name: string;
     readonly params: Param[];
@@ -480,8 +532,17 @@ export class TaskDef implements TaskLike {
     readonly timeout?: string;
     /** Runtime fan-out over an array result, emitted as the pipeline task's `matrix`. */
     readonly fanOut?: { over: Result; as: Param; from?: TaskLike };
+    /**
+     * Typed handles for the artifacts this task publishes, keyed by the names `produces`
+     * declared — `build.artifacts.dist`. A consumer names one in its own `consumes`.
+     */
+    readonly artifacts: { readonly [K in AN]: TaskArtifact };
+    /** The same artifacts as a list, for callers that do not know the names. */
+    readonly produces: TaskArtifact[];
+    /** Artifacts this task reads, each carrying the task that publishes it. */
+    readonly consumes: TaskArtifact[];
 
-    constructor(opts: TaskOptions) {
+    constructor(opts: TaskOptions<AN>) {
         this.name = opts.name;
         // Actions are pod-internal: they expand to ordinary steps here, then contribute what
         // they need upward — the same direction StatusReporter.requiredParams flow, and with
@@ -556,6 +617,44 @@ export class TaskDef implements TaskLike {
                 (this.workspaces as Workspace[]).push(c.workspace);
             }
         }
+        // Artifacts, producer side first: where this task publishes follows from the
+        // workspaces it *declared*, before a consumed artifact's workspace is auto-mounted
+        // below — otherwise consuming from elsewhere would make its own `produces` ambiguous.
+        const produced = Object.entries(opts.produces ?? {}) as [string, ArtifactSource][];
+        const artifacts: Record<string, TaskArtifact> = {};
+        if (produced.length > 0) {
+            const store = opts.artifactStore ?? new WorkspaceArtifactStore();
+            const workspace = store.needsWorkspace
+                ? this._resolveArtifactWorkspace(opts.artifactWorkspace)
+                : undefined;
+            for (const [name, source] of produced) {
+                // An action output only exists in this pod, so promoting one the task never
+                // composes would publish a path nothing ever wrote.
+                if (
+                    typeof source !== "string" &&
+                    !this.actions.some(a => a.name === source.action)
+                ) {
+                    throw new Error(
+                        `Task '${this.name}': artifact '${name}' promotes output ` +
+                            `'${source.output}' of action '${source.action}', which this task does ` +
+                            `not compose — add the action to 'steps', or publish a path instead`,
+                    );
+                }
+                artifacts[name] = new TaskArtifact({ name, source, producer: this, store, workspace });
+            }
+        }
+        this.artifacts = artifacts as { readonly [K in AN]: TaskArtifact };
+        this.produces = Object.values(artifacts);
+        // Consumer side. A consumer mounts the workspace its artifacts live on the same way a
+        // PVC-backed cache auto-registers one: the handle already knows where the file is, so
+        // naming the workspace again at the call site is redundant and easy to get wrong.
+        this.consumes = [...(opts.consumes ?? [])];
+        for (const a of this.consumes) {
+            if (!a.store.needsWorkspace || !a.workspace) continue;
+            if (!this.workspaces.some(w => w.name === a.workspace!.name)) {
+                (this.workspaces as Workspace[]).push(a.workspace);
+            }
+        }
         // A promotion action (`output.toResult(r)`) contributes the result it writes, so the
         // same Result passed in both places is bound once, not rejected as double-bound.
         this.results = mergeByName([...(opts.results ?? []), ...this.actions.flatMap((a) => a.results)]);
@@ -601,6 +700,29 @@ export class TaskDef implements TaskLike {
     }
 
     /**
+     * The workspace `produces` publishes onto: the one the caller named, else the task's
+     * only workspace. Anything else is a guess, and a wrong guess is a file written where
+     * no consumer looks.
+     */
+    private _resolveArtifactWorkspace(explicit?: Workspace): Workspace {
+        if (explicit) return explicit;
+        if (this.workspaces.length === 1) return this.workspaces[0];
+        if (this.workspaces.length === 0) {
+            throw new Error(
+                `Task '${this.name}': 'produces' needs a workspace to publish onto — an ` +
+                    `artifact has to outlive this pod — but the task declares none. Add one, ` +
+                    `or set 'artifactStore' to a store that needs no workspace`,
+            );
+        }
+        throw new Error(
+            `Task '${this.name}': 'produces' is ambiguous — the task declares ` +
+                `${String(this.workspaces.length)} workspaces ` +
+                `(${this.workspaces.map(w => w.name).join(", ")}). Set 'artifactWorkspace' to ` +
+                `the one artifacts should live on`,
+        );
+    }
+
+    /**
      * Synthesizes the Tekton Task resource into the given cdk8s scope.
      *
      * @param opts - Project-level defaults, as {@link TektonicProject} supplies them. All
@@ -636,6 +758,24 @@ export class TaskDef implements TaskLike {
         const saveSteps = this.caches
             .filter((c) => c.saveStrategy !== "finally")
             .map((c) => (c.backend ?? new PvcBackend()).saveStep(c, ctx));
+        // Artifact fetch/publish steps bracket the user steps and are theirs, not the cache
+        // steps': a cache is an optimisation whose failure is survivable, an artifact is a
+        // declared handoff whose failure breaks a downstream task. So they take the exit-code
+        // contract exactly as user steps do, below, and count toward the reported status.
+        const artifactCtx = artifactStoreCtx(this.name);
+        const fetchSteps = this.consumes
+            .map((a) => a.store.fetchStep(a, artifactCtx))
+            .filter((s): s is TaskStepSpec => s !== undefined);
+        const publishSteps = this.produces.map((a) => a.store.publishStep(a, artifactCtx));
+        const ownStepNames = new Set(this.steps.map((s) => s.name));
+        for (const s of [...fetchSteps, ...publishSteps]) {
+            if (ownStepNames.has(s.name)) {
+                throw new Error(
+                    `Task '${this.name}': injected artifact step '${s.name}' collides with a ` +
+                        `step of the same name — rename the step, or the artifact it derives from`,
+                );
+            }
+        }
         // Only the user steps' names are handed to the reporter. The cache restore/save
         // steps also run with onError:'continue', so Tekton records exit codes for them
         // too — but a failed cache save must stay non-fatal, so they are excluded.
@@ -644,7 +784,7 @@ export class TaskDef implements TaskLike {
                 ? [
                       this.statusReporter.finalStep(
                           this.statusContext,
-                          this.steps.map((s) => s.name),
+                          [...fetchSteps, ...this.steps, ...publishSteps].map((s) => s.name),
                       ),
                   ]
                 : [];
@@ -708,7 +848,9 @@ export class TaskDef implements TaskLike {
 
         const steps = [
             ...restoreSteps.map((s) => renderStep(s, libCtx, false)),
+            ...fetchSteps.map((s) => renderStep(s, userCtx, reporting)),
             ...this.steps.map((s) => renderStep(s, userCtx, reporting)),
+            ...publishSteps.map((s) => renderStep(s, userCtx, reporting)),
             ...saveSteps.map((s) => renderStep(s, libCtx, false)),
             ...reporterStep.map((s) => renderStep(s, libCtx, false)),
         ];

@@ -7,6 +7,7 @@ import { triggerEvents } from './trigger';
 import type { PipelineTrigger } from './trigger';
 import { Condition } from './condition';
 import { applyOverrides, unwrapGated, GatedTask } from './pipeline-task';
+import type { TaskArtifact } from './artifact';
 import type { PipelineTaskOverrides } from './pipeline-task';
 
 /**
@@ -156,6 +157,7 @@ export class Pipeline {
     }
 
     this.flagSharedWorkspaceCaches(regularTasks);
+    this.validateArtifacts(regularTasks);
 
     // Collect cache-save finally tasks from TaskDef nodes only.
     const cacheFinallyTasks = regularTasks
@@ -193,6 +195,77 @@ export class Pipeline {
             `'${target}', which ${mountCount.get(target)} tasks in this pipeline mount — ` +
             `defaulting to skipRestoreIfPathsExist so a concurrent task's warm tree is kept. ` +
             `Set skipRestoreIfPathsExist explicitly to silence this.`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Checks every declared producer/consumer relationship for files.
+   *
+   * This is what `produces`/`consumes` are *for*: a consumer that names an artifact nothing
+   * here publishes, or one whose producer is not ordered before it, is a runtime
+   * file-not-found today and a synth-time error now. The two cases are reported separately —
+   * "not in this pipeline" and "not ordered before you" are different mistakes with
+   * different fixes, and conflating them sends the author looking in the wrong place.
+   *
+   * Publishing something nobody consumes only warns: an artifact left for a human to collect
+   * is legitimate, and a pipeline that emits one is not broken.
+   */
+  private validateArtifacts(tasks: TaskLike[]): void {
+    const inPipeline = new Set(tasks);
+    const consumed = new Set<TaskArtifact>();
+    const reachable = new Map<TaskLike, Set<TaskLike>>();
+    const dependenciesClosure = (task: TaskLike): Set<TaskLike> => {
+      const memo = reachable.get(task);
+      if (memo) return memo;
+      const acc = new Set<TaskLike>();
+      reachable.set(task, acc);
+      for (const dep of this.dependenciesOf(task)) {
+        if (acc.has(dep)) continue;
+        acc.add(dep);
+        for (const t of dependenciesClosure(dep)) acc.add(t);
+      }
+      return acc;
+    };
+
+    for (const task of tasks) {
+      if (!(task instanceof TaskDef)) continue;
+      for (const artifact of task.consumes) {
+        consumed.add(artifact);
+        if (!inPipeline.has(artifact.producer)) {
+          throw new Error(
+            `Pipeline '${this.name}': task '${task.name}' consumes artifact ` +
+              `'${artifact.name}' from task '${artifact.producerName}', which is not in this ` +
+              `pipeline — add '${artifact.producerName}' to it, or to '${task.name}'.needs`,
+          );
+        }
+        if (artifact.producer === task) {
+          throw new Error(
+            `Pipeline '${this.name}': task '${task.name}' consumes its own artifact ` +
+              `'${artifact.name}' — a task's own steps read the path directly`,
+          );
+        }
+        if (!dependenciesClosure(task).has(artifact.producer)) {
+          throw new Error(
+            `Pipeline '${this.name}': task '${task.name}' consumes artifact ` +
+              `'${artifact.name}', but its producer '${artifact.producerName}' is not ordered ` +
+              `before it — add '${artifact.producerName}' to '${task.name}'.needs. ` +
+              `Both tasks are in the pipeline; only the ordering is missing`,
+          );
+        }
+      }
+    }
+
+    for (const task of tasks) {
+      if (!(task instanceof TaskDef)) continue;
+      for (const artifact of task.produces) {
+        if (consumed.has(artifact)) continue;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `tektonic [${this.name}/${task.name}]: artifact '${artifact.name}' is declared but ` +
+            `no task in this pipeline consumes it. That is fine for something a human ` +
+            `collects; drop it from 'produces' if it is a leftover.`,
         );
       }
     }

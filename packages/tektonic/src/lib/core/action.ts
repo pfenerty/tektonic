@@ -3,6 +3,7 @@ import { Workspace } from "./workspace";
 import { Result } from "./result";
 import type { TaskStepSpec, TaskCacheSpec, TaskVolumeSpec } from "./task";
 import { sh, Script } from "../script";
+import { ActionArtifactSource } from "./artifact";
 
 /**
  * Directory every action's declared outputs live in, shared by every step in the pod.
@@ -125,6 +126,38 @@ export class ActionOutput {
                 cp "$src" "$dest"
             `,
         });
+    }
+
+    /**
+     * Declares this output as a cross-pod {@link TaskArtifact}, for the composing task's
+     * `produces`.
+     *
+     * The sibling of {@link toWorkspace} with the declaration added: the file still lands on
+     * a workspace, but a named producer and named consumers now exist, so synthesis can
+     * check that anyone reading it is ordered after this task. Reach for `toWorkspace` only
+     * for a file nobody in the pipeline consumes.
+     *
+     * Unlike {@link toResult} and {@link toWorkspace} this returns a declaration rather than
+     * an {@link Action}: the copy step is injected by the composing task, which is the only
+     * thing that knows the workspace and store the artifact lives on.
+     *
+     * ```ts
+     * const build = new Task({
+     *   name: 'build',
+     *   workspaces: [ws],
+     *   steps: [compile],
+     *   produces: { dist: compile.outputs.bundle.toArtifact() },
+     * });
+     * ```
+     */
+    toArtifact(opts: { image?: string } = {}): ActionArtifactSource {
+        return new ActionArtifactSource(
+            this.action,
+            this.name,
+            this.path,
+            this.fileName,
+            opts.image ?? this.producerImage,
+        );
     }
 
     private resolvePromotionImage(opts: ActionPromotionOptions, method: string): string {
