@@ -54,6 +54,21 @@ Two things worth knowing:
   that: after any merge or rebase that touches `.beads/issues.jsonl`, check the file
   against the branch you merged (`git show <other>:.beads/issues.jsonl`) before trusting
   `bd ready`, and re-import anything the merge dropped.
+- **The database can also be stale with no merge involved, so check it at session start.**
+  A cloud container once came up with a database *behind* the committed JSONL: `bd list`
+  showed every child of an epic open and had never heard of four issues the file carried,
+  and `bd ready` offered work that shipped weeks earlier. Nothing warns you, and
+  `bd doctor` does not compare the two. Treat the committed file as the source of truth
+  and reconcile before trusting `bd ready`:
+
+  ```bash
+  bd import .beads/issues.jsonl     # upsert; prints what it changed
+  ```
+
+  Do this **before** claiming anything. `bd import` skips rows the local database has a
+  *newer* copy of — it says so only as a passing `(1 stale skipped)` — so if you have
+  already touched an issue this session, that row stays wrong. `bd import --allow-stale`
+  restores it from the file.
 - **Never run a bare `bd init` in a checkout that already has beads.** It rewrites
   `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` and the git hooks, and commits the
   result. The hook uses `--skip-agents --skip-hooks --from-jsonl` and reverts the
@@ -80,6 +95,18 @@ bd close <id>                         # mark done AFTER committing
 
 **Critical:** `bd close` without a prior `git commit` leaves changes stranded on disk.
 Always include the issue ID in the commit message (e.g. `feat: add source-branch param (tektonic-wq6)`).
+
+**`bd update --notes` REPLACES the notes field — it does not append.** Issue notes here
+accumulate the audit trail that makes a blocked issue resumable, and a single `--notes`
+wipes all of it with only a warning on stderr. Use `--append-notes` to add to them:
+
+```bash
+bd update <id> --append-notes "what you found"   # adds, newline-separated
+bd update <id> --notes "..."                     # destroys what was there
+```
+
+If you do clobber a set of notes, recover them from the committed JSONL — that copy is
+whatever was last exported: `python3 -c "import json;[print(json.loads(l)['notes']) for l in open('.beads/issues.jsonl') if json.loads(l)['id']=='<id>']"`.
 
 Issue types: `bug`, `feature`, `task`, `epic`, `chore`
 Priorities: `0`=critical, `1`=high, `2`=medium (default), `3`=low, `4`=backlog
