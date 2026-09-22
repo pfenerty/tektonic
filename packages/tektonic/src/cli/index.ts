@@ -12,7 +12,8 @@ import { lintScripts } from './lint';
 const USAGE = `tektonic — synthesize and verify Tekton pipelines
 
 Usage:
-  tektonic synth [entry] [--outdir <dir>]   Run the project entrypoint, writing its manifests
+  tektonic synth [entry] [--outdir <dir>] [--target <name>]
+                                            Run the project entrypoint, writing its manifests
   tektonic check [entry]                    Synthesize to a temp dir and diff against the committed output
   tektonic graph [entry] [--format text|mermaid]
                                             Render the task DAG of each triggered pipeline
@@ -21,6 +22,10 @@ Usage:
 The entrypoint is the file that constructs a TektonicProject. It is found from the argument,
 then "tektonic": { "entry": "..." } in package.json, then conventional paths (tektonic.ts,
 .tektonic/pipeline.ts, …). "tektonic": { "runner": "..." } overrides how it is executed.
+
+--target narrows synthesis to one of the targets the project already declares (pac, tekton,
+hub, ...), so 'tektonic synth --target hub --outdir catalog' writes a catalog tree and nothing
+else. Repeat it comma-separated for several.
 
 Options:
   -h, --help      Show this help
@@ -90,7 +95,14 @@ function readManifest<T>(file: string): T[] {
 
 function cmdSynth(positional: string[], flags: Record<string, string>, cwd: string): number {
   const entry = resolveEntry(positional[0], cwd);
-  const env = flags.outdir ? { [CLI_ENV.outdir]: path.resolve(cwd, flags.outdir) } : {};
+  if (flags.target === 'true') {
+    console.error(`tektonic synth: --target needs a target name (e.g. --target hub)`);
+    return 2;
+  }
+  const env = {
+    ...(flags.outdir ? { [CLI_ENV.outdir]: path.resolve(cwd, flags.outdir) } : {}),
+    ...(flags.target ? { [CLI_ENV.targets]: flags.target } : {}),
+  };
   return runEntry(entry, cwd, env);
 }
 

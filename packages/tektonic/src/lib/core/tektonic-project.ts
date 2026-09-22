@@ -34,7 +34,35 @@ export const CLI_ENV = {
   synthManifest: 'TEKTONIC_SYNTH_MANIFEST',
   /** File the pipeline graph is appended to as JSON lines. */
   graphManifest: 'TEKTONIC_GRAPH_MANIFEST',
+  /** Comma-separated target names to emit, narrowing what the project declared. */
+  targets: 'TEKTONIC_TARGETS',
 } as const;
+
+/**
+ * The subset of a project's targets the CLI asked for, via `tektonic synth --target <name>`.
+ *
+ * Narrowing rather than adding: a target emits files a project committed to, so `--target`
+ * can only pick from what the entrypoint already declares. Naming one it does not throws
+ * rather than emitting nothing, which is what an unnoticed typo would otherwise cost.
+ */
+function selectedTargets(declared: SynthTarget[]): SynthTarget[] {
+  const requested = (process.env[CLI_ENV.targets] ?? '')
+    .split(',')
+    .map(name => name.trim())
+    .filter(name => name.length > 0);
+  if (requested.length === 0) return declared;
+
+  const available = declared.map(t => t.name);
+  const missing = requested.filter(name => !available.includes(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `tektonic: --target ${missing.map(m => `'${m}'`).join(', ')} — this project declares ` +
+        `[${available.join(', ')}]. Add the target to 'targets' in the project definition, ` +
+        `or name one of those.`,
+    );
+  }
+  return declared.filter(t => requested.includes(t.name));
+}
 
 /**
  * The directory a project actually writes to. Unchanged unless the CLI asked for a redirect,
@@ -293,7 +321,7 @@ export class TektonicProject {
     const prefix = opts.name ?? '';
     const namespace = opts.namespace;
 
-    this.targets = opts.targets ?? [
+    const declaredTargets = opts.targets ?? [
       new PacTarget({
         repository: opts.repository,
         repoRelativePath: opts.repoRelativePath ?? declaredOutdir,
@@ -301,7 +329,10 @@ export class TektonicProject {
         eventContext: opts.pacEventContext,
       }),
     ];
-    if (opts.targets) warnUnusedPacOptions(opts, this.targets);
+    if (opts.targets) warnUnusedPacOptions(opts, declaredTargets);
+    // `--target` narrows what this run emits, so everything downstream — injected params and
+    // env included — is built from the selected targets, not the declared ones.
+    this.targets = selectedTargets(declaredTargets);
 
     const podSecurityContext = {
       ...DEFAULT_POD_SECURITY_CONTEXT,
@@ -380,6 +411,7 @@ export class TektonicProject {
         name,
         resourceName: prefix ? `${prefix}-${name}` : name,
         manifest: renderTask(task),
+        ...(task.catalog ? { catalog: task.catalog } : {}),
       });
     }
 

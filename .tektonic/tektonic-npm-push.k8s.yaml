@@ -46,7 +46,8 @@ spec:
         type: string
       - name: revision
         type: string
-      - name: url
+      - description: Repository URL to clone from
+        name: url
         type: string
     tasks:
       - name: set-status-pending-npm-push

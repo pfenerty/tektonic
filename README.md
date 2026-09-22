@@ -133,7 +133,7 @@ See [docs/cli.md](docs/cli.md).
 
 - [Getting started](docs/getting-started.md) — build a complete pipeline end to end
 - [Agent guide](docs/agent-guide.md) — full API reference with examples
-- [CLI](docs/cli.md) — `tektonic synth`, `check`, `graph`, `lint`
+- [CLI](docs/cli.md) — `tektonic synth`, `check`, `graph`, `lint`, `synth --target`
 - [Building a job library](docs/job-libraries.md) — jobs and actions, task factories, presets, and the stable surface to build on
 - [Testing pipelines](docs/testing.md) — assert graph shape and gating in memory, no cluster
 - [Scripting](docs/scripting.md) — language tags, `scriptFromFile`, the exit-code contract, testing
@@ -141,6 +141,7 @@ See [docs/cli.md](docs/cli.md).
 - [Secrets & security](docs/secrets.md) — env/file secret injection and security defaults
 - [Tekton Chains](docs/chains.md) — automatic SLSA provenance: git source, image subjects, signing annotations
 - [Pipelines as Code](docs/pac.md) — `TektonicProject` and in-repo `.tekton/` pipelines
+- [Publishing to a Tekton catalog](docs/catalog.md) — `HubTarget`, catalog metadata, and the round trip with `HubTaskRef`
 - [Custom cache backends](docs/cache-backends.md) — implement the `CacheBackend` interface
 - [Status reporters](docs/status-reporters.md) — implement the `StatusReporter` interface
 - [Architecture & internals](docs/architecture.md) — how Tektonic is built (for contributors)

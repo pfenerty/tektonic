@@ -6,7 +6,8 @@ constructs a `TektonicProject` — so synthesis and drift-checking do not have t
 every consumer's Makefile.
 
 ```
-tektonic synth [entry] [--outdir <dir>]   Run the project entrypoint, writing its manifests
+tektonic synth [entry] [--outdir <dir>] [--target <name>]
+                                          Run the project entrypoint, writing its manifests
 tektonic check [entry]                    Synthesize to a temp dir and diff against the committed output
 tektonic graph [entry] [--format text|mermaid]
                                           Render the task DAG of each triggered pipeline
@@ -75,6 +76,23 @@ Note the plain `set -e` + non-zero exit: hand-rolled drift checks that call `exi
 a nushell body have been swallowed by the exit-code contract and reported green on drift. See
 [scripting.md](scripting.md).
 
+## `synth --target` — emit one target
+
+A project can declare several synthesis targets, and by default `synth` runs all of them.
+`--target` narrows the run to the ones named (comma-separated for several):
+
+```bash
+tektonic synth --target hub --outdir catalog
+```
+
+It **narrows, it never adds**: a target emits files the project committed to, so `--target` can
+only pick from what the entrypoint already declares. Naming one it does not declare fails,
+listing the project's targets — an unnoticed typo would otherwise cost a silently empty outdir.
+
+The main use is a target whose output belongs somewhere other than the pipeline manifests, such
+as a Tekton catalog tree — see [catalog.md](catalog.md). `check` has no `--target`: it compares a
+whole outdir, so a filtered synthesis would report every other target's files as orphans.
+
 ## `graph` — review the DAG
 
 ```
@@ -109,4 +127,4 @@ skipped rather than failing the run, so this is safe in any environment.
 |------|---------|
 | `0` | success |
 | `1` | drift found, entrypoint failed, or lint failures |
-| `2` | usage error (no command, unknown command, bad `--format`) |
+| `2` | usage error (no command, unknown command, bad `--format`, bare `--target`) |

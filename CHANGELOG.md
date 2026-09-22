@@ -5,6 +5,65 @@ This file starts at the first change after 2.0.0; earlier history is in the git 
 
 ## Unreleased
 
+### Added: `HubTarget` — publish Tekton catalog entries, don't just consume them
+
+`HubTaskRef` has always been able to *reference* a task someone else published. `HubTarget` is
+the other half: a task that carries `catalog` metadata is emitted as a catalog entry, in the
+layout a catalog repository expects.
+
+```typescript
+const clone = new Task({
+  name: 'git-clone',
+  catalog: {
+    version: '0.1',
+    description: 'Clones a git repository onto a workspace and reports its metadata.',
+    categories: ['Git'],
+    tags: ['git', 'clone'],
+  },
+  params: [url],
+  steps: [/* … */],
+});
+
+new TektonicProject({ namespace: 'ci', pipelines, targets: [new PacTarget(), new HubTarget()] });
+```
+
+```bash
+tektonic synth --target hub --outdir catalog
+# catalog/task/git-clone/0.1/git-clone.yaml
+# catalog/task/git-clone/0.1/README.md
+```
+
+The entry is the manifest every other target emits with everything local to *this* repository
+taken back off it — no namespace, no project name prefix, no PAC annotations — plus the catalog
+metadata as `tekton.dev/*` annotations, an `app.kubernetes.io/version` label and a
+`spec.description`. The README beside it is generated from the task's own params, results and
+workspaces, because a hand-written catalog README is stale the first time a param is added.
+
+Each entry is validated at synth time, with every problem reported at once: a param or result
+with no description, an image from a registry a consumer cannot pull anonymously, a category the
+hub does not know, a version that is not `major.minor[.patch]`. The hub's own checks run once a
+pull request is already open against the catalog repository, which is a slow way to learn that a
+param has no description.
+
+Publication itself stays outside the tool — a catalog entry is landed by a pull request — which
+is why this is `synth --target hub` and not a `publish` command.
+
+New API: `HubTarget`, `HubTargetOptions`, `CatalogMetadata`, `CatalogCategory`,
+`CATALOG_CATEGORIES`, `DEFAULT_CATALOG_PLATFORMS`, `DEFAULT_MIN_PIPELINES_VERSION`,
+`PUBLIC_REGISTRIES`, `catalogProblems`, `catalogReadme`, `registryOf`,
+`TaskOptions.catalog`, `GitPipelineOptions.cloneCatalog`, `BuiltTask.catalog`. See
+[docs/catalog.md](docs/catalog.md).
+
+### Added: `tektonic synth --target <name>`
+
+Narrows a synthesis to targets the project already declares, comma-separated for several. It
+never *adds* a target — naming one the project does not declare fails, listing what it has,
+rather than writing an empty outdir. `check` takes no `--target`: it compares a whole outdir, so
+a filtered synthesis would report every other target's files as orphans.
+
+The `git-clone` task `GitPipeline` generates now describes its `url` and `revision` params, so
+the emitted manifests gain two `description` fields. Re-run `tektonic synth` and commit.
+
 ### Added: artifacts — a declared producer/consumer relationship for files
 
 A task may now declare the files it publishes and the files it reads, and tektonic checks the

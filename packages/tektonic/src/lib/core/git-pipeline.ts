@@ -5,6 +5,7 @@ import { Result } from "./result";
 import { Pipeline, PipelineOptions } from "./pipeline";
 import { GatedTask, unwrapGated } from "./pipeline-task";
 import { Condition } from "./condition";
+import type { CatalogMetadata } from "./catalog";
 import { injectedImageRef } from "./injected-image";
 import { sh } from "../script";
 
@@ -36,6 +37,12 @@ export interface GitPipelineOptions extends PipelineOptions {
      * and are inert when Chains is not installed. Defaults to `true`.
      */
     chainsProvenance?: boolean;
+    /**
+     * Catalog metadata for the generated `git-clone` task, marking it publishable to a
+     * Tekton catalog by {@link HubTarget}. Omit — the default — and the task is emitted for
+     * this project only, as every other task is.
+     */
+    cloneCatalog?: CatalogMetadata;
 }
 
 /**
@@ -75,8 +82,8 @@ export class GitPipeline extends Pipeline {
     constructor(opts: GitPipelineOptions) {
         const workspace =
             opts.workspace ?? new Workspace({ name: "workspace" });
-        const url = new Param({ name: "url" });
-        const revision = new Param({ name: "revision" });
+        const url = new Param({ name: "url", description: "Repository URL to clone from" });
+        const revision = new Param({ name: "revision", description: "Branch, tag or revision to check out" });
 
         const commitResult      = new Result({ name: "commit",         description: "Full commit SHA" });
         const shortShaResult    = new Result({ name: "short-sha",      description: "Abbreviated commit SHA" });
@@ -109,6 +116,7 @@ export class GitPipeline extends Pipeline {
 
         const cloneTask = new Task({
             name: "git-clone",
+            ...(opts.cloneCatalog ? { catalog: opts.cloneCatalog } : {}),
             params: [url, revision],
             workspaces: [workspace],
             results: cloneResults,

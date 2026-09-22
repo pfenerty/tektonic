@@ -23,6 +23,7 @@ import {
 } from "./injected-image";
 import type { InjectedStepImage } from "./injected-image";
 import { TaskArtifact, WorkspaceArtifactStore, artifactStoreCtx } from "./artifact";
+import type { CatalogMetadata } from "./catalog";
 import type { ArtifactSource, ArtifactStore } from "./artifact";
 
 /**
@@ -475,6 +476,14 @@ export interface TaskOptions<AN extends string = never> {
      * types are unaffected. See docs/adr/0001-artifacts-and-dependencies.md.
      */
     artifactStore?: ArtifactStore;
+    /**
+     * Marks this task publishable to a Tekton catalog, and carries the metadata an entry
+     * needs beyond the manifest itself — version, description, categories, platforms.
+     *
+     * Only read by a target that publishes catalog entries: `HubTarget` emits exactly the
+     * tasks carrying it and ignores the rest. Nothing about how the task runs changes.
+     */
+    catalog?: CatalogMetadata;
 }
 
 /**
@@ -532,6 +541,8 @@ export class TaskDef<AN extends string = never> implements TaskLike {
     readonly timeout?: string;
     /** Runtime fan-out over an array result, emitted as the pipeline task's `matrix`. */
     readonly fanOut?: { over: Result; as: Param; from?: TaskLike };
+    /** Catalog metadata, when this task is publishable. Read by catalog-publishing targets. */
+    readonly catalog?: CatalogMetadata;
     /**
      * Typed handles for the artifacts this task publishes, keyed by the names `produces`
      * declared — `build.artifacts.dist`. A consumer names one in its own `consumes`.
@@ -675,6 +686,7 @@ export class TaskDef<AN extends string = never> implements TaskLike {
         this.retries = opts.retries;
         this.timeout = opts.timeout;
         this.fanOut = opts.fanOut;
+        this.catalog = opts.catalog;
         // Gating on a task's result (e.g. a change-detection task) auto-wires the
         // producing task into the dependency graph — no manual `needs`.
         if (opts.when instanceof Condition) {
