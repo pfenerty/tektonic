@@ -125,6 +125,16 @@ Three packages are published to npmjs — `@pfenerty/tektonic`,
 `@pfenerty/tektonic-cache-gcs` and `@pfenerty/tektonic-reporter-github` — by the `publish`
 GitHub Actions workflow (`.github/workflows/publish.yml`), triggered by a `vX.Y.Z` tag.
 
+> **This section describes the intended release, not the committed workflow.** The workspace
+> split left `publish.yml` assuming a single package at the repository root: its tag check reads
+> the private root `package.json`, whose `version` is `undefined`, so **every tag fails the
+> guard**, and its publish step is a bare `npm publish` that never reaches the provider
+> packages. Cutting a release today fails rather than publishing something wrong. The corrected
+> file is written and verified but cannot be pushed from an agent session — GitHub refuses any
+> write under `.github/workflows/` without `workflow` scope — so it needs a human. The exact
+> content is in tektonic-46j.11's design field; tektonic-46j.12 tracks the install story that
+> depends on it.
+
 **They version together.** One tag governs all three, the workflow refuses to publish unless
 every `packages/*/package.json` carries that version, and core publishes first so the peer
 range the providers declare is already satisfiable. That keeps the peer range trivial while
@@ -151,12 +161,21 @@ build, SBOM and vulnerability scan — still runs in Tekton on push and pull req
 ### One-time setup
 
 Trusted publishing is configured on a package that **already exists** — `npm trust` requires
-that too — so the very first publish is manual, and it needs an interactive 2FA challenge:
+that too — so the very first publish is manual, and it needs an interactive 2FA challenge.
+
+**All three packages need this, not just the two new ones.** `@pfenerty/tektonic` has never
+been published either: `npm view @pfenerty/tektonic` is a 404, and the newest tag in the repo is
+`v1.4.0` — the v2.0.0 release commit was never tagged.
 
 ```bash
 npm login                                    # a 2FA session, valid for two hours
-npm publish --access public --otp=123456     # first release only; code from your authenticator
+npm publish -w @pfenerty/tektonic --access public --otp=123456                  # core first
+npm publish -w @pfenerty/tektonic-cache-gcs --access public --otp=123456
+npm publish -w @pfenerty/tektonic-reporter-github --access public --otp=123456
 ```
+
+Core goes first so the peer range the providers declare on it is satisfiable the moment they
+appear on the registry.
 
 The `--otp` is not optional. A web-login session alone gets
 `403 … Two-factor authentication or granular access token with bypass 2fa enabled is required`,
