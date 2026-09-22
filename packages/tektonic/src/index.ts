@@ -92,6 +92,16 @@ export { PacTarget, triggerAnnotations, PAC_ANNOTATION_PREFIX } from "./lib/targ
 export type { PacTargetOptions, RepositoryConfig, RepositoryGitProvider } from "./lib/targets/pac";
 export { TektonTarget, pipelineManifest } from "./lib/targets/tekton";
 export type { TektonTargetOptions, PipelineManifestOptions } from "./lib/targets/tekton";
+export { HubTarget, PUBLIC_REGISTRIES, catalogProblems, catalogReadme, registryOf } from "./lib/targets/hub";
+export type { HubTargetOptions, CatalogReadmeOptions } from "./lib/targets/hub";
+
+// Catalog publication: the metadata a task carries to become a publishable catalog entry.
+export {
+    CATALOG_CATEGORIES,
+    DEFAULT_CATALOG_PLATFORMS,
+    DEFAULT_MIN_PIPELINES_VERSION,
+} from "./lib/core/catalog";
+export type { CatalogCategory, CatalogMetadata } from "./lib/core/catalog";
 export { TRIGGER_EVENTS } from "./lib/core/trigger-events";
 export type { StatusReporter } from "./lib/core/status-reporter";
 

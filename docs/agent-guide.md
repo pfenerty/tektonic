@@ -576,6 +576,10 @@ A `HubTaskRef` is **job-sized**: a whole remote Task, one more pod. For reusable
 | `needs?` | `TaskLike[]` | Upstream dependencies |
 | `catalog?` | `string` | ArtifactHub catalog name. Defaults to `"tekton"` |
 
+`HubTaskRef` is the *read* side. To publish a task of your own as a catalog entry, give it
+`catalog` metadata and add `HubTarget` to the project's targets — see
+[catalog.md](catalog.md).
+
 ---
 
 ## Rules & Conditions

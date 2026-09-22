@@ -92,6 +92,7 @@ All steps inherit a secure-by-default `stepTemplate` that drops all capabilities
 | `stepTemplate` | `Record<string, unknown>` | — | Override/extend step template |
 | `statusContext` | `string` | task `name` | Context string reported to the external status system (e.g. `"ci/test"`). Requires `statusReporter`. |
 | `statusReporter` | `StatusReporter` | — | When set, automatically appends a final status-reporting step and merges the reporter's `requiredParams` into this task's params. |
+| `catalog` | `CatalogMetadata` | — | Marks this task publishable to a Tekton catalog and carries the entry's metadata. Read only by `HubTarget`; nothing about how the task runs changes. See [catalog.md](catalog.md). |
 
 #### Methods
 
@@ -220,6 +221,7 @@ Extends all [`PipelineOptions`](#pipelineoptions) with:
 |----------|------|---------|-------------|
 | `workspace` | `Workspace` | `new Workspace({ name: 'workspace' })` | Shared workspace mounted by all tasks |
 | `cloneImage` | `string` | the project's `injectedStepImage` | Container image for the git clone step. Must provide `/bin/sh` and `git` |
+| `cloneCatalog` | `CatalogMetadata` | — | Catalog metadata for the generated `git-clone` task, publishing it as a catalog entry. See [catalog.md](catalog.md). |
 
 #### Additional properties
 

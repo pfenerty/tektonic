@@ -72,7 +72,8 @@ src/
     ├── cache/                # PvcBackend + the cache helpers backend authors reuse
     └── targets/              # SynthTarget implementations
         ├── pac/              # PacTarget + every PAC concept: annotations, params, {{ }} bindings
-        └── tekton/           # TektonTarget: plain kind: Pipeline + kind: Task
+        ├── tekton/           # TektonTarget: plain kind: Pipeline + kind: Task
+        └── hub/              # HubTarget: Tekton catalog entries, the write side of HubTaskRef
 ```
 
 Nothing under `core/` mentions PAC. `grep -r 'pipelinesascode\|PAC_' src/lib/core/` returning
@@ -228,8 +229,11 @@ the core. Each is exported from `index.ts`.
 
 Renders a `SynthModel` — pipeline specs, task manifests, workspace bindings, run defaults, with
 no delivery-mechanism concepts in it — into files under an outdir, and returns what it wrote.
-`PacTarget` and `TektonTarget` are the built-ins; a third party implements the interface to emit
-a Tekton Hub catalog entry, a GitOps overlay or a different file layout.
+`PacTarget`, `TektonTarget` and `HubTarget` are the built-ins; a third party implements the
+interface to emit a GitOps overlay, a different file layout or anything else. `HubTarget` is
+worth reading as the worked example of a target that emits something other than runnable
+manifests — a Tekton catalog tree, with its own validation and a generated README
+([catalog.md](catalog.md)).
 
 Two optional members let a target reach back into the model it will be handed:
 `injectedParams` (params it binds on every run, so every pipeline spec must declare them — PAC's

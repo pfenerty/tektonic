@@ -283,3 +283,66 @@ new TektonicProject({
     expect(result.output).toContain('no project entrypoint found');
   });
 });
+
+// `--target` narrows a synthesis to one of the targets the project already declares — the
+// route to a catalog tree, which nothing else should have to emit alongside.
+describe('tektonic synth --target (end to end)', () => {
+  const cli = path.resolve(__dirname, '../../dist/cli/index.js');
+  const repoRoot = path.resolve(__dirname, '../..');
+
+  const project = `
+const { Task, GitPipeline, TektonicProject, TRIGGER_EVENTS, PacTarget, HubTarget } = require(${JSON.stringify(repoRoot + '/dist/index.js')});
+const test = new Task({ name: 'test', steps: [{ name: 's', image: 'docker.io/alpine:3.20' }] });
+new TektonicProject({
+  name: 'demo',
+  namespace: 'demo-ci',
+  outdir: '.tekton',
+  pipelines: [new GitPipeline({
+    name: 'push',
+    trigger: { rules: [{ on: TRIGGER_EVENTS.PUSH }] },
+    cloneCatalog: { version: '0.1', description: 'Clones a git repository.', categories: ['Git'] },
+    tasks: [test],
+  })],
+  targets: [new PacTarget(), new HubTarget()],
+});
+`;
+
+  const runCli = (args: string[]): { status: number; output: string } => {
+    try {
+      return { status: 0, output: execFileSync(process.execPath, [cli, ...args], { cwd: tmp, encoding: 'utf8' }) };
+    } catch (err) {
+      const e = err as { status: number; stdout: string; stderr: string };
+      return { status: e.status, output: `${e.stdout}${e.stderr}` };
+    }
+  };
+  const emitted = (rel: string): boolean => fs.existsSync(path.join(tmp, rel));
+
+  beforeEach(() => {
+    write('tektonic.js', project);
+  });
+
+  it('emits every declared target when none is named', () => {
+    expect(runCli(['synth']).status).toBe(0);
+    expect(emitted('.tekton/demo-push.k8s.yaml')).toBe(true);
+    expect(emitted('.tekton/task/git-clone/0.1/git-clone.yaml')).toBe(true);
+  });
+
+  it('emits only the named target, into the outdir it was given', () => {
+    expect(runCli(['synth', '--target', 'hub', '--outdir', 'catalog']).status).toBe(0);
+    expect(emitted('catalog/.tekton/task/git-clone/0.1/git-clone.yaml')).toBe(true);
+    expect(emitted('catalog/.tekton/demo-push.k8s.yaml')).toBe(false);
+  });
+
+  it('fails naming the project’s targets when asked for one it does not declare', () => {
+    const result = runCli(['synth', '--target', 'hubb']);
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain("--target 'hubb'");
+    expect(result.output).toContain('[pac, hub]');
+  });
+
+  it('rejects a bare --target rather than treating it as a target named true', () => {
+    const result = runCli(['synth', '--target']);
+    expect(result.status).toBe(2);
+    expect(result.output).toContain('--target needs a target name');
+  });
+});

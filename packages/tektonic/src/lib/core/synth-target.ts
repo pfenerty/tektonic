@@ -1,3 +1,4 @@
+import type { CatalogMetadata } from './catalog';
 import type { Param } from './param';
 import type { PipelineTrigger } from './trigger';
 import type { TRIGGER_EVENTS } from './trigger-events';
@@ -20,6 +21,12 @@ export interface BuiltTask {
   readonly resourceName: string;
   /** The full manifest, exactly as it should be written. */
   readonly manifest: Record<string, unknown>;
+  /**
+   * Catalog metadata, when the task declared itself publishable. A target that publishes
+   * catalog entries — `HubTarget` — emits exactly the tasks carrying it; every other target
+   * ignores it, since it says nothing about how the task runs.
+   */
+  readonly catalog?: CatalogMetadata;
 }
 
 /** One pipeline, built to a Tekton `PipelineSpec` and everything a target needs around it. */
