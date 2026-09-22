@@ -12,6 +12,22 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## The issue graph can be silently wrong after a merge
+
+`bd import` is upsert, but `git merge` is not. Merging a branch whose `.beads/issues.jsonl`
+predates other issue activity overwrites the file wholesale, and the closures and issues it
+never knew about are gone with no warning. Commit `287b508` did exactly that — four closures
+reverted, three issues dropped — and because the Dolt database is gitignored and rebuilt from
+that file, the next cloud session offered already-shipped work as `bd ready`.
+
+None of the defences work today: `.gitattributes` names a `merge=beads` driver that is neither
+configured nor implemented by the installed bd, and `bd hooks list` reports every hook
+uninstalled. Tracked as **tektonic-1cz**.
+
+Until it is fixed: after any merge or rebase touching `.beads/issues.jsonl`, diff the file
+against the branch you merged (`git show <other>:.beads/issues.jsonl`) before trusting
+`bd ready`, and re-import anything the merge dropped.
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.

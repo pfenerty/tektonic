@@ -40,8 +40,20 @@ Two things worth knowing:
 - **`.beads/issues.jsonl` is the interchange format.** The Dolt database itself is
   gitignored, so a cloud session only sees issues that have been exported and
   committed. Run `bd export -o .beads/issues.jsonl` and commit it alongside your work,
-  the way ocidex does. `bd import` is upsert, so merging a branch's JSONL never
-  clobbers issues it does not mention.
+  the way ocidex does.
+- **A stale branch WILL clobber the issue graph, and nothing stops it today.** `bd import`
+  is upsert, but `git merge` is not: merging a branch whose JSONL predates other issue
+  activity overwrites the file wholesale, and the closures and issues it never knew about
+  are simply gone. This is not hypothetical — commit `287b508` did exactly that, reverting
+  four closures and dropping three issues from main, and the next cloud session rebuilt
+  its database from the damaged file and offered shipped work as `bd ready`.
+  `.gitattributes` declares `merge=beads` for the file, but that driver is **not
+  configured** (`git config merge.beads.driver` is unset, and the installed bd has no
+  `bd merge` command), and `bd hooks list` reports every hook uninstalled, so the
+  pre-commit export and post-merge import never run either. Until tektonic-1cz fixes
+  that: after any merge or rebase that touches `.beads/issues.jsonl`, check the file
+  against the branch you merged (`git show <other>:.beads/issues.jsonl`) before trusting
+  `bd ready`, and re-import anything the merge dropped.
 - **Never run a bare `bd init` in a checkout that already has beads.** It rewrites
   `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` and the git hooks, and commits the
   result. The hook uses `--skip-agents --skip-hooks --from-jsonl` and reverts the
