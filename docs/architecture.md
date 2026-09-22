@@ -279,6 +279,12 @@ they assert is the contract rather than GitHub's wire format. The optional
   plumbing that YAML CI makes ugly. Centralising it in the `ScriptLanguage` wrappers keeps
   consumer scripts clean and correct by construction. See [scripting.md](scripting.md#the-exit-code-contract-handled-for-you).
 
+Longer-form decisions, with the options that lost and why, live in [adr/](adr/):
+
+- [ADR 0001 — An artifacts/dependencies primitive](adr/0001-artifacts-and-dependencies.md):
+  why declared subpaths on the shared workspace beat a store-backed artifact service for now,
+  and why Tekton's own `artifacts` are provenance rather than transport.
+
 ## Testing
 
 Tests use [vitest](https://vitest.dev/) and live next to source as `*.test.ts`. Two patterns
