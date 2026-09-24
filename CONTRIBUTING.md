@@ -153,7 +153,7 @@ build, SBOM and vulnerability scan — still runs in Tekton on push and pull req
 ### The git ref is not an install channel
 
 `npm install github:pfenerty/tektonic` worked before the workspace split and **must not be
-suggested as a fallback while the packages are unpublished.** It does not fail — which is the
+suggested as a fallback.** It does not fail — which is the
 problem:
 
 ```
@@ -168,7 +168,6 @@ ref work when the root *was* `@pfenerty/tektonic`. npm has no way to install a s
 a git dependency, so there is no ref that reaches `packages/tektonic` either. The install
 reports success and leaves the consumer with nothing.
 
-So until the first release is cut, the only way to consume tektonic is to build from a clone.
 The registry is the channel; the git ref is not, and the README says so.
 
 ### Cutting a release
@@ -182,32 +181,46 @@ The registry is the channel; the git ref is not, and the README says so.
 ### One-time setup
 
 Trusted publishing is configured on a package that **already exists** — `npm trust` requires
-that too — so the very first publish is manual, and it needs an interactive 2FA challenge.
-
-**All three packages need this, not just the two new ones.** `@pfenerty/tektonic` has never
-been published either: `npm view @pfenerty/tektonic` is a 404, and the newest tag in the repo is
-`v1.4.0` — the v2.0.0 release commit was never tagged.
+that too — so a package's very first publish is manual, and it needs an interactive 2FA
+challenge. Use web auth; it works with a passkey, which is the only 2FA method npm offers some
+accounts (there is no authenticator app, so no code to pass with `--otp`):
 
 ```bash
-npm login                                    # a 2FA session, valid for two hours
-npm publish -w @pfenerty/tektonic --access public --otp=123456                  # core first
-npm publish -w @pfenerty/tektonic-cache-gcs --access public --otp=123456
-npm publish -w @pfenerty/tektonic-reporter-github --access public --otp=123456
+npm login --auth-type=web
+npm run build
+npm publish -w @pfenerty/tektonic-cache-gcs --access public --auth-type=web
 ```
 
-Core goes first so the peer range the providers declare on it is satisfiable the moment they
-appear on the registry.
+The publish prints an `Authenticate your account at: https://www.npmjs.com/auth/cli/…` link;
+approve it with the passkey and the CLI finishes. A brand-new package can 404 on `npm view`
+for several minutes afterwards while the registry CDN catches up — that is not a failed publish.
 
-The `--otp` is not optional. A web-login session alone gets
-`403 … Two-factor authentication or granular access token with bypass 2fa enabled is required`,
-and npm does not reliably prompt for the code. If the account's only 2FA method is a passkey or
-security key there is no code to pass — enroll an authenticator app under Account → Two-Factor
-Authentication first.
+Publish from an up-to-date checkout of `main`: the tarball is whatever is on disk. That is how
+`@pfenerty/tektonic@2.0.0` went wrong — it was published by hand from a stale pre-split
+checkout (its `gitHead` is `4768acd`), and npm never lets a version be reused, so the first real
+workspace release is 2.0.1. Check `gitHead` after any manual publish:
+`npm view @pfenerty/tektonic gitHead`.
 
-Then register the GitHub Actions publisher, either from the CLI (npm 11.10+, also 2FA-gated):
+Where a package stands:
+
+| Package | First publish | Trusted publisher |
+|---|---|---|
+| `@pfenerty/tektonic` | done (2.0.0, stale — deprecated) | register |
+| `@pfenerty/tektonic-cache-gcs` | manual, at 2.0.1 | register after |
+| `@pfenerty/tektonic-reporter-github` | manual, at 2.0.1 | register after |
+
+Core does not need a manual 2.0.1 — once its trusted publisher is registered, the `v2.0.1` tag
+publishes it and skips the providers already on the registry at that version. Publish the
+providers only once the 2.0.1 bump is on `main`, so the peer range they declare on core matches
+what the tag will publish.
+
+Register the GitHub Actions publisher for each package, from the CLI (npm 11.10+, also
+2FA-gated). `npm trust` does not understand workspaces, so name each package:
 
 ```bash
-npm trust github --repo pfenerty/tektonic --file publish.yml --allow-publish
+for pkg in @pfenerty/tektonic @pfenerty/tektonic-cache-gcs @pfenerty/tektonic-reporter-github; do
+  npm trust github "$pkg" --repo pfenerty/tektonic --file publish.yml --auth-type=web
+done
 ```
 
 or on npmjs.com → the package → Settings → Trusted Publishers. Every release after that goes

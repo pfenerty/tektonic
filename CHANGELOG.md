@@ -3,7 +3,11 @@
 Notable changes to `@pfenerty/tektonic` and its provider packages, which version together.
 This file starts at the first change after 2.0.0; earlier history is in the git log.
 
-## Unreleased
+## 2.0.1
+
+First release from the workspace layout, and the first of the provider packages.
+`@pfenerty/tektonic@2.0.0` on npm was published by mistake from a stale pre-split tree and is
+deprecated; everything below is new relative to it.
 
 ### Added: `HubTarget` — publish Tekton catalog entries, don't just consume them
 

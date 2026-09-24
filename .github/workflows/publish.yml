@@ -37,27 +37,37 @@ jobs:
       - run: npm ci
 
       # The tag must name the version being published, or a mistagged release would
-      # quietly publish whatever happens to be in package.json.
-      - name: Check the tag matches the package version
+      # quietly publish whatever happens to be in package.json. The packages version
+      # together, so every workspace has to match; the root is private and versionless.
+      - name: Check the tag matches every package version
         run: |
-          version=$(node -p "require('./package.json').version")
           tag="${GITHUB_REF_NAME#v}"
-          if [ "$tag" != "$version" ]; then
-            echo "tag ${GITHUB_REF_NAME} does not match package version ${version}"
-            exit 1
-          fi
+          bad=0
+          for ws in $(node -p "require('./package.json').workspaces.join(' ')"); do
+            version=$(node -p "require('./${ws}/package.json').version")
+            if [ "$tag" != "$version" ]; then
+              echo "tag ${GITHUB_REF_NAME} does not match ${ws} version ${version}"
+              bad=1
+            fi
+          done
+          exit $bad
 
       - run: npm test
 
       - run: npm run build
 
       # Re-running a release workflow is routine, and republishing an existing version is
-      # an npm error — treat "already there" as success.
+      # an npm error — treat "already there" as success, per package. Workspaces publish in
+      # the root's order, core first, so the providers' peer range on it is satisfiable the
+      # moment they appear on the registry.
       - name: Publish
         run: |
-          version=$(node -p "require('./package.json').version")
-          if npm view "@pfenerty/tektonic@${version}" version >/dev/null 2>&1; then
-            echo "${version} is already on the registry, nothing to do"
-            exit 0
-          fi
-          npm publish
+          for ws in $(node -p "require('./package.json').workspaces.join(' ')"); do
+            name=$(node -p "require('./${ws}/package.json').name")
+            version=$(node -p "require('./${ws}/package.json').version")
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "${name}@${version} is already on the registry, skipping"
+              continue
+            fi
+            npm publish -w "${name}" --access public
+          done

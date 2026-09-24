@@ -54,22 +54,21 @@ it. Install only what you use.
 ## Install
 
 ```bash
-npm install @pfenerty/tektonic cdk8s constructs
+npm install @pfenerty/tektonic@^2.0.1 cdk8s constructs
 # optional, as needed:
 npm install @pfenerty/tektonic-cache-gcs @pfenerty/tektonic-reporter-github
 ```
 
-Once published these need no registry configuration or auth. Releases are cut by tagging
+These need no registry configuration or auth. Releases are cut by tagging
 `vX.Y.Z`, published through npm trusted publishing (OIDC, with a provenance attestation and no
 stored token); see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
-> **Not on the registry yet.** No version of any of the three has been published —
-> `npm view @pfenerty/tektonic` is a 404 and the newest tag is `v1.4.0`. The install above is
-> the channel to use *once the first release is cut*; today it fails. The git ref that worked
-> before the workspace split (`npm install github:pfenerty/tektonic`) is not a fallback and is
-> no longer supported: it now resolves to the private workspace root and installs nothing
-> usable — see [CONTRIBUTING.md](CONTRIBUTING.md#the-git-ref-is-not-an-install-channel).
-> Until then, build from a clone. Tracked in tektonic-46j.12.
+> **Use 2.0.1 or later.** `@pfenerty/tektonic@2.0.0` on npm was published by mistake from a
+> stale pre-split tree and is deprecated; 2.0.1 is the first real release of all three packages.
+> The git ref that worked before the workspace split (`npm install github:pfenerty/tektonic`) is
+> not a fallback and is no longer supported: it now resolves to the private workspace root and
+> installs nothing usable — see
+> [CONTRIBUTING.md](CONTRIBUTING.md#the-git-ref-is-not-an-install-channel).
 
 ## Quick example
 
