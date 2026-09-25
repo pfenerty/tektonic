@@ -106,7 +106,7 @@ export interface TaskStepSpec {
     env?: {
         name: string;
         value?: string;
-        valueFrom?: { secretKeyRef: { name: string; key: string } };
+        valueFrom?: { secretKeyRef: { name: string; key: string; optional?: boolean } };
     }[];
     /** Controls behaviour when this step fails. `continue` lets subsequent steps run. */
     onError?: "continue" | "stopAndFail";
@@ -278,7 +278,7 @@ export interface TaskSidecarSpec {
     env?: {
         name: string;
         value?: string;
-        valueFrom?: { secretKeyRef: { name: string; key: string } };
+        valueFrom?: { secretKeyRef: { name: string; key: string; optional?: boolean } };
     }[];
     /** CPU/memory requests and limits for this sidecar. */
     computeResources?: {

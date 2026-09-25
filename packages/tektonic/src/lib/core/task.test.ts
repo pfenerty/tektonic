@@ -123,6 +123,21 @@ describe('Task', () => {
       expect(manifest.spec.steps[0].computeResources).toEqual({ limits: { cpu: '4', memory: '4Gi' } });
     });
 
+    it('passes an optional secretKeyRef through on step and sidecar env', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      const env = [{ name: 'API_KEY', valueFrom: { secretKeyRef: { name: 'api', key: 'key', optional: true } } }];
+      const t = new Task({
+        name: 'optional-secret',
+        steps: [{ name: 's', image: 'alpine', env }],
+        sidecars: [{ name: 'side', image: 'alpine', env }],
+      });
+      t.synth(chart, 'ns', CAPABLE);
+      const manifest = chart.toJson()[0];
+      expect(manifest.spec.steps[0].env).toEqual(env);
+      expect(manifest.spec.sidecars[0].env).toEqual(env);
+    });
+
     it('merges custom stepTemplate over defaults', () => {
       const app = new App();
       const chart = new Chart(app, 'test');
