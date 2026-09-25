@@ -14,3 +14,6 @@ repomix-output.xml
 .beads/proxieddb/
 *.gate.lock*
 *.tsbuildinfo
+
+# local code-graph index (tokensave)
+.tokensave/
