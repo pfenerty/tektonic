@@ -70,6 +70,19 @@ export interface StatusReporter {
    */
   createSkipResolverTask?(entries: { taskName: string; context: string }[], name?: string): Task;
 
+  /**
+   * Identifies reporters that can share one pending task and one reconciler task. A pipeline
+   * merges the tasks of reporters of the same class whose keys are equal into a single group,
+   * built by whichever of them it discovers first.
+   *
+   * Include everything {@link createPendingTask} and {@link createStatusReconcilerTask}
+   * depend on, and nothing that only affects {@link finalStep} — each task still gets its
+   * final step from its own reporter.
+   *
+   * Optional: a reporter that does not implement it gets a group per instance.
+   */
+  pendingGroupKey?(): string;
+
   /** Parameters required by this reporter (e.g., repo name, revision). */
   readonly requiredParams: Param[];
 }

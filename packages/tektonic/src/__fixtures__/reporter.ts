@@ -10,7 +10,7 @@ import { EXIT_CODE_PATH, languageFor, Script, stepExitCodePath } from '../lib/sc
  *
  * The built-in reporter now lives in `@pfenerty/tektonic-reporter-github`, which depends on
  * this package — core cannot import it back without a cycle, and should not want to: what
- * core's tests assert is the *contract* (a pending task per reporter instance, a final step
+ * core's tests assert is the *contract* (a pending task per reporter group, a final step
  * that reads the exit-code file, a reconciler task carrying `$(tasks.X.status)` as a param),
  * not GitHub's wire format. Anything GitHub-specific belongs to that package's own tests.
  *
@@ -20,7 +20,7 @@ import { EXIT_CODE_PATH, languageFor, Script, stepExitCodePath } from '../lib/sc
  */
 export class TestStatusReporter implements StatusReporter {
   private readonly image: string;
-  /** Distinguishes two instances, the way `failOnError` distinguishes two real ones. */
+  /** Only changes the final step, so — as in the GitHub reporter — it is not in the group key. */
   readonly failOnError: boolean;
   readonly requiredParams: Param[];
 
@@ -44,6 +44,10 @@ export class TestStatusReporter implements StatusReporter {
         onError: 'continue' as const,
       })),
     });
+  }
+
+  pendingGroupKey(): string {
+    return JSON.stringify({ image: this.image });
   }
 
   finalStep(context: string, userStepNames: string[] = []): TaskStepSpec {

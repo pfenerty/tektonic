@@ -349,42 +349,82 @@ describe('multiple status reporters', () => {
 
   const specOf = (pipeline: Pipeline) => (pipelineManifest(pipeline, { namespace: 'ns' }) as any).spec;
 
-  it('emits one pending task per reporter instance', () => {
-    // Two instances of the same class still differ (failOnError here); two different
-    // implementations — GitHub and, say, Slack — would post to different systems entirely.
-    const strict = new TestStatusReporter();
-    const reportOnly = new TestStatusReporter({ failOnError: false });
-    const spec = specOf(
-      new Pipeline({ name: 'ci', tasks: [reportingTask('build', strict), reportingTask('scan', reportOnly)] }),
+  // Two reporters whose pending/reconciler tasks differ — here by image; two different
+  // implementations (GitHub and, say, Slack) would post to different systems entirely.
+  const split = () => {
+    const main = new TestStatusReporter();
+    const other = new TestStatusReporter({ image: 'other' });
+    return specOf(
+      new Pipeline({ name: 'ci', tasks: [reportingTask('build', main), reportingTask('scan', other)] }),
     );
-    const names = (spec.tasks as any[]).map(t => t.name);
+  };
+
+  it('emits one pending task per reporter group', () => {
+    const names = (split().tasks as any[]).map(t => t.name);
     expect(names).toContain('set-status-pending-ci');
     expect(names).toContain('set-status-pending-ci-2');
   });
 
   it('initialises each context through its own reporter and waits on that pending task', () => {
-    const strict = new TestStatusReporter();
-    const reportOnly = new TestStatusReporter({ failOnError: false });
-    const spec = specOf(
-      new Pipeline({ name: 'ci', tasks: [reportingTask('build', strict), reportingTask('scan', reportOnly)] }),
-    );
-    const tasks = spec.tasks as any[];
+    const tasks = split().tasks as any[];
     expect(tasks.find(t => t.name === 'build').runAfter).toEqual(['set-status-pending-ci']);
     expect(tasks.find(t => t.name === 'scan').runAfter).toEqual(['set-status-pending-ci-2']);
   });
 
   it('reconciles each reporter group separately', () => {
-    const strict = new TestStatusReporter();
-    const reportOnly = new TestStatusReporter({ failOnError: false });
-    const spec = specOf(
-      new Pipeline({ name: 'ci', tasks: [reportingTask('build', strict), reportingTask('scan', reportOnly)] }),
-    );
+    const spec = split();
     const finallyNames = (spec.finally as any[]).map(t => t.name);
     expect(finallyNames).toContain('reconcile-status-ci');
     expect(finallyNames).toContain('reconcile-status-ci-2');
     const first = (spec.finally as any[]).find(t => t.name === 'reconcile-status-ci');
     expect(first.params.map((p: any) => p.name)).toContain('status-build');
     expect(first.params.map((p: any) => p.name)).not.toContain('status-scan');
+  });
+
+  describe('reporters differing only in final-step behaviour', () => {
+    // An explicit image, so synthesising a task needs no project injected-step image.
+    const strict = new TestStatusReporter({ image: 'nu' });
+    const reportOnly = new TestStatusReporter({ image: 'nu', failOnError: false });
+    const build = reportingTask('build', strict);
+    const scan = reportingTask('scan', reportOnly);
+    const spec = specOf(new Pipeline({ name: 'ci', tasks: [build, scan] }));
+
+    it('share one pending task', () => {
+      const names = (spec.tasks as any[]).map(t => t.name);
+      expect(names.filter((n: string) => n.startsWith('set-status-pending'))).toEqual(['set-status-pending-ci']);
+      const tasks = spec.tasks as any[];
+      expect(tasks.find(t => t.name === 'build').runAfter).toEqual(['set-status-pending-ci']);
+      expect(tasks.find(t => t.name === 'scan').runAfter).toEqual(['set-status-pending-ci']);
+    });
+
+    it('share one reconciler covering both tasks', () => {
+      expect((spec.finally as any[]).map(t => t.name)).toEqual(['reconcile-status-ci']);
+      const params = (spec.finally as any[])[0].params.map((p: any) => p.name);
+      expect(params).toContain('status-build');
+      expect(params).toContain('status-scan');
+    });
+
+    it('still take their final step from their own reporter', () => {
+      const finalScript = (task: Task) => {
+        const chart = new Chart(new App(), 't');
+        task.synth(chart, 'ns');
+        const steps = (chart.toJson()[0] as any).spec.steps as any[];
+        return steps.find(s => s.name === 'report-status').script as string;
+      };
+      expect(finalScript(build)).toContain('exit $exit_code');
+      expect(finalScript(scan)).toContain('exit 0');
+    });
+  });
+
+  it('keeps one group per instance for a reporter without pendingGroupKey', () => {
+    // An external reporter written before pendingGroupKey existed.
+    const keyless = () => Object.assign(new TestStatusReporter(), { pendingGroupKey: undefined });
+    const spec = specOf(
+      new Pipeline({ name: 'ci', tasks: [reportingTask('build', keyless()), reportingTask('scan', keyless())] }),
+    );
+    const names = (spec.tasks as any[]).map(t => t.name);
+    expect(names).toContain('set-status-pending-ci');
+    expect(names).toContain('set-status-pending-ci-2');
   });
 
   it('leaves the single-reporter case byte-identical', () => {

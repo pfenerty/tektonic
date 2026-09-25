@@ -113,19 +113,31 @@ export class Pipeline {
     );
 
     if (statusTasks.length > 0) {
-      // Group by reporter *instance*: a pending task is built by one reporter and can only
+      // Group by equivalent reporter: a pending task is built by one reporter and can only
       // initialise contexts that reporter owns. A pipeline mixing, say, a GitHub reporter
       // with a Slack one used to report every context through whichever was discovered
-      // first — and even two instances of the same class can differ (failOnError).
-      const byReporter = new Map<StatusReporter, TaskDef[]>();
+      // first. Two instances of the same class with equal pendingGroupKey() build identical
+      // pending and reconciler tasks — they differ only in finalStep (failOnError) — so they
+      // share one group; without a key, every instance is its own group.
+      const groups: { reporter: StatusReporter; members: Set<StatusReporter>; tasks: TaskDef[] }[] = [];
       for (const task of statusTasks) {
         const reporter = task.statusReporter!;
-        byReporter.set(reporter, [...(byReporter.get(reporter) ?? []), task]);
+        const key = reporter.pendingGroupKey?.();
+        let group = groups.find(g => g.members.has(reporter)
+          || (key !== undefined
+            && g.reporter.constructor === reporter.constructor
+            && g.reporter.pendingGroupKey?.() === key));
+        if (!group) {
+          group = { reporter, members: new Set(), tasks: [] };
+          groups.push(group);
+        }
+        group.members.add(reporter);
+        group.tasks.push(task);
       }
 
       const pendingTasks: TaskDef[] = [];
       let index = 0;
-      for (const [reporter, tasks] of byReporter) {
+      for (const { reporter, members, tasks } of groups) {
         // The first (usual, single-reporter) group keeps the unsuffixed names, so a project
         // with one reporter emits exactly what it did before.
         const suffix = index === 0 ? '' : `-${index + 1}`;
@@ -134,7 +146,7 @@ export class Pipeline {
           tasks.map(t => t.statusContext!),
           `set-status-pending-${this.name}${suffix}`,
         );
-        this._pendingTasks.set(reporter, pending);
+        for (const member of members) this._pendingTasks.set(member, pending);
         pendingTasks.push(pending);
 
         // A reporting task's own report-status step is its last step, so anything that stops
