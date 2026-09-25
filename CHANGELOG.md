@@ -18,6 +18,15 @@ takes its final step from its own reporter. `GitHubStatusReporter`'s key covers 
 Re-synthesize after upgrading: the `-2` task files are no longer emitted, and the unsuffixed
 ones gain the contexts they held.
 
+### Changed: `GitHubStatusReporter` pending and reconcile tasks run one step
+
+`set-status-pending-*` and `reconcile-status-*` used to carry one step, and so one container,
+per context. Each is now a single step, `pending` or `reconcile`, that loops over the
+contexts. It still POSTs every one before failing and exits 1 once at the end if any failed,
+so one failed POST can't leave the rest unset. `pendingTaskComputeResources` now sizes that
+one step. Anything matching the old per-context step names (`pending-<context>`,
+`resolve-<context>`) has to move to the new ones.
+
 ## 2.0.1
 
 First release from the workspace layout, and the first of the provider packages.

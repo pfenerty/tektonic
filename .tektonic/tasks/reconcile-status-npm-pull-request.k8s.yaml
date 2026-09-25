@@ -31,100 +31,49 @@ spec:
   steps:
     - env: []
       image: ghcr.io/pfenerty/apko-cicd/base:stable
-      name: resolve-test-npm
+      name: reconcile
       onError: continue
       script: |-
         #!/usr/bin/env nu
         def log [msg: string] { print $"[(date now | format date '%H:%M:%S')] ($msg)" }
-        let status = "$(params.status-test-npm)"
-
-        if $status not-in ["None" "Failed"] {
-          log $"reconcile-status [test-npm]: task status is ($status), nothing to resolve"
-          exit 0
+        def post-status [label: string, body: record]: nothing -> bool {
+          let url = $"https://api.github.com/repos/$(params.repo-full-name)/statuses/$(params.revision)"
+          log $"($label): POST ($url)"
+          log $"($label): body: ($body | to json -r)"
+          try {
+            http post $url $body -t application/json -H [
+              Authorization $"token ($env.GITHUB_TOKEN)"
+              Accept "application/vnd.github+json"
+            ]
+            log $"($label): done"
+            true
+          } catch { |e|
+            log $"($label): error: ($e.msg)"
+            false
+          }
         }
 
-        let state = if $status == "None" { "success" } else { "failure" }
-        let desc = if $status == "None" { "Skipped" } else { "Failed or terminated" }
+        let entries = [
+          { status: "$(params.status-test-npm)", context: "test-npm" }
+          { status: "$(params.status-build-npm)", context: "build-npm" }
+          { status: "$(params.status-anchore-scan)", context: "anchore-scan" }
+        ]
 
-        let url = $"https://api.github.com/repos/$(params.repo-full-name)/statuses/$(params.revision)"
-        let body = { state: $state, context: "test-npm", description: $desc }
+        let failed = $entries | each { |entry|
+          let label = $"reconcile-status [($entry.context)]"
+          if $entry.status not-in ["None" "Failed"] {
+            log $"($label): task status is ($entry.status), nothing to resolve"
+            null
+          } else {
+            let state = if $entry.status == "None" { "success" } else { "failure" }
+            let desc = if $entry.status == "None" { "Skipped" } else { "Failed or terminated" }
+            log $"($label): task status is ($entry.status)"
+            let body = { state: $state, context: $entry.context, description: $desc }
+            if (post-status $label $body) { null } else { $entry.context }
+          }
+        } | compact
 
-        log $"reconcile-status [test-npm]: task status is ($status), POST ($url)"
-        log $"reconcile-status [test-npm]: body: ($body | to json -r)"
-
-        try {
-          http post $url $body -t application/json -H [
-            Authorization $"token ($env.GITHUB_TOKEN)"
-            Accept "application/vnd.github+json"
-          ]
-          log "reconcile-status [test-npm]: done"
-        } catch { |e|
-          log $"reconcile-status [test-npm]: error: ($e.msg)"
-          exit 1
-        }
-    - env: []
-      image: ghcr.io/pfenerty/apko-cicd/base:stable
-      name: resolve-build-npm
-      onError: continue
-      script: |-
-        #!/usr/bin/env nu
-        def log [msg: string] { print $"[(date now | format date '%H:%M:%S')] ($msg)" }
-        let status = "$(params.status-build-npm)"
-
-        if $status not-in ["None" "Failed"] {
-          log $"reconcile-status [build-npm]: task status is ($status), nothing to resolve"
-          exit 0
-        }
-
-        let state = if $status == "None" { "success" } else { "failure" }
-        let desc = if $status == "None" { "Skipped" } else { "Failed or terminated" }
-
-        let url = $"https://api.github.com/repos/$(params.repo-full-name)/statuses/$(params.revision)"
-        let body = { state: $state, context: "build-npm", description: $desc }
-
-        log $"reconcile-status [build-npm]: task status is ($status), POST ($url)"
-        log $"reconcile-status [build-npm]: body: ($body | to json -r)"
-
-        try {
-          http post $url $body -t application/json -H [
-            Authorization $"token ($env.GITHUB_TOKEN)"
-            Accept "application/vnd.github+json"
-          ]
-          log "reconcile-status [build-npm]: done"
-        } catch { |e|
-          log $"reconcile-status [build-npm]: error: ($e.msg)"
-          exit 1
-        }
-    - env: []
-      image: ghcr.io/pfenerty/apko-cicd/base:stable
-      name: resolve-anchore-scan
-      onError: continue
-      script: |-
-        #!/usr/bin/env nu
-        def log [msg: string] { print $"[(date now | format date '%H:%M:%S')] ($msg)" }
-        let status = "$(params.status-anchore-scan)"
-
-        if $status not-in ["None" "Failed"] {
-          log $"reconcile-status [anchore-scan]: task status is ($status), nothing to resolve"
-          exit 0
-        }
-
-        let state = if $status == "None" { "success" } else { "failure" }
-        let desc = if $status == "None" { "Skipped" } else { "Failed or terminated" }
-
-        let url = $"https://api.github.com/repos/$(params.repo-full-name)/statuses/$(params.revision)"
-        let body = { state: $state, context: "anchore-scan", description: $desc }
-
-        log $"reconcile-status [anchore-scan]: task status is ($status), POST ($url)"
-        log $"reconcile-status [anchore-scan]: body: ($body | to json -r)"
-
-        try {
-          http post $url $body -t application/json -H [
-            Authorization $"token ($env.GITHUB_TOKEN)"
-            Accept "application/vnd.github+json"
-          ]
-          log "reconcile-status [anchore-scan]: done"
-        } catch { |e|
-          log $"reconcile-status [anchore-scan]: error: ($e.msg)"
+        if ($failed | is-not-empty) {
+          log $"reconcile-status: ($failed | length) failed: ($failed | str join ', ')"
           exit 1
         }
