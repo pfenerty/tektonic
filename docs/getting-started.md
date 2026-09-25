@@ -10,7 +10,7 @@ This guide walks through building a complete Tekton CI pipeline using `@pfenerty
 ## 1. Install dependencies
 
 ```bash
-npm install @pfenerty/tektonic cdk8s constructs
+npm install @pfenerty/tektonic
 npm install -D typescript @types/node
 ```
 

@@ -14,7 +14,7 @@ Full documentation lives in the repository:
 ## Install
 
 ```bash
-npm install @pfenerty/tektonic cdk8s constructs
+npm install @pfenerty/tektonic
 ```
 
 Optional provider packages, each taking this one as a peer dependency:

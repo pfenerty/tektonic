@@ -54,12 +54,13 @@ it. Install only what you use.
 ## Install
 
 ```bash
-npm install @pfenerty/tektonic@^2.0.1 cdk8s constructs
+npm install @pfenerty/tektonic@^2.0.1
 # optional, as needed:
 npm install @pfenerty/tektonic-cache-gcs @pfenerty/tektonic-reporter-github
 ```
 
-These need no registry configuration or auth. Releases are cut by tagging
+`cdk8s` and `constructs` come with it as regular dependencies — install them yourself only if
+your code imports them directly. These need no registry configuration or auth. Releases are cut by tagging
 `vX.Y.Z`, published through npm trusted publishing (OIDC, with a provenance attestation and no
 stored token); see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
