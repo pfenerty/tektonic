@@ -3,6 +3,30 @@
 Notable changes to `@pfenerty/tektonic` and its provider packages, which version together.
 This file starts at the first change after 2.0.0; earlier history is in the git log.
 
+## Unreleased
+
+### Fixed: reporters differing only in `failOnError` no longer duplicate the pending and reconcile tasks
+
+A pipeline used to build one `set-status-pending-*` and one `reconcile-status-*` task per
+reporter *instance*, so a project with a strict and a report-only `GitHubStatusReporter` got a
+second pair suffixed `-2` — two extra pods on every run, even though `failOnError` only changes
+each task's own final step. Reporters now expose an optional `pendingGroupKey()`; tasks whose
+reporters share a class and a key share one pending and one reconcile task, and each still
+takes its final step from its own reporter. `GitHubStatusReporter`'s key covers everything but
+`failOnError`. A reporter that does not implement it keeps a group per instance, as before.
+
+Re-synthesize after upgrading: the `-2` task files are no longer emitted, and the unsuffixed
+ones gain the contexts they held.
+
+### Changed: `GitHubStatusReporter` pending and reconcile tasks run one step
+
+`set-status-pending-*` and `reconcile-status-*` used to carry one step, and so one container,
+per context. Each is now a single step, `pending` or `reconcile`, that loops over the
+contexts. It still POSTs every one before failing and exits 1 once at the end if any failed,
+so one failed POST can't leave the rest unset. `pendingTaskComputeResources` now sizes that
+one step. Anything matching the old per-context step names (`pending-<context>`,
+`resolve-<context>`) has to move to the new ones.
+
 ## 2.0.1
 
 First release from the workspace layout, and the first of the provider packages.

@@ -28,10 +28,11 @@ interface StatusReporter {
   createStatusReconcilerTask?(entries: { taskName: string; context: string }[], name?: string): Task;
   /** @deprecated — implement createStatusReconcilerTask instead. */
   createSkipResolverTask?(entries: { taskName: string; context: string }[], name?: string): Task;
+  pendingGroupKey?(): string;
 }
 ```
 
-Two of the five members are optional, and which one a pipeline calls is feature-detected, so
+Three of the six members are optional, and which one a pipeline calls is feature-detected, so
 the full method set is worth spelling out.
 
 ### `requiredParams`
@@ -43,9 +44,14 @@ declared with the same name wins, so a caller can retype or re-describe one.
 ### `createPendingTask(contexts, name)`
 
 Returns a `Task` that sets every context to "pending". `Pipeline` emits it once per reporter
-*instance* and makes every task using that instance `runAfter` it. Two instances in one
-pipeline (two different systems, or the same one configured differently) each get their own,
-suffixed `-2`, `-3`, … — so key any per-instance state on `this`, not on a module global.
+*group* (see [`pendingGroupKey`](#pendinggroupkey)) and makes every task in that group
+`runAfter` it. Two groups in one pipeline (two different systems, or the same one configured
+differently) each get their own, suffixed `-2`, `-3`, … — so key any per-instance state on
+`this`, not on a module global.
+
+One step can post every context — the GitHub reporter loops over them in a single container.
+If it does, try every context before failing, so one failed POST does not leave the rest
+unset.
 
 `name` is supplied by the pipeline, scoped as `set-status-pending-<pipeline>`. Honour it: a
 project emitting several pipelines writes one manifest per unique task name, and a reporter
@@ -80,8 +86,8 @@ Optional, and the reason it exists is worth knowing before you skip it. A task's
 context pending **forever**: a `when` that skips the task, but equally an OOMKill, a node
 eviction, an image-pull failure or a `TaskRun` timeout, none of which run any step at all.
 
-Return a `Task` for the pipeline's `finally` block with one step per entry, checking that
-task's settled status:
+Return a `Task` for the pipeline's `finally` block that checks each entry's settled task
+status:
 
 - `None` — skipped by `when`, directly or because an ancestor was skipped or failed.
 - `Failed` — failed, including the infrastructure kills above.
@@ -106,13 +112,25 @@ new Param({
 A param carrying a `pipelineExpression` is bound by the PipelineTask and excluded from the
 pipeline's own inferred params, so it never reaches the PipelineRun's interface.
 
-Give each step `onError: 'continue'`: Tekton skips every remaining step in a pod once one
-exits non-zero, so without it a single failed POST swallows every later context.
+Don't let one failed POST swallow the rest. Tekton skips every remaining step in a pod once
+one exits non-zero, so with a step per entry give each `onError: 'continue'`; with a single
+step (as the GitHub reporter does), try every entry and exit non-zero once at the end.
 
 `createSkipResolverTask` is the deprecated predecessor, covering only skipped tasks.
 `Pipeline` prefers `createStatusReconcilerTask` and falls back to it, so an older reporter
 keeps working; implement the newer one. Implement neither and pipelines simply skip
 reconciliation.
+
+### `pendingGroupKey()`
+
+Optional. Lets reporters share one pending task and one reconciler task. `Pipeline` merges
+reporters of the same class whose keys are equal into one group, built by whichever it
+discovers first; without a key, every instance is its own group.
+
+Put in the key everything `createPendingTask` and `createStatusReconcilerTask` depend on, and
+nothing that only shapes `finalStep` — each task still takes its final step from its own
+reporter. The GitHub reporter's key leaves out `failOnError`, so a strict and a report-only
+instance share one pending task instead of emitting a `-2` copy.
 
 ## Images
 
