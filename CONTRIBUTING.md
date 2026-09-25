@@ -125,25 +125,17 @@ Three packages are published to npmjs — `@pfenerty/tektonic`,
 `@pfenerty/tektonic-cache-gcs` and `@pfenerty/tektonic-reporter-github` — by the `publish`
 GitHub Actions workflow (`.github/workflows/publish.yml`), triggered by a `vX.Y.Z` tag.
 
-> **This section describes the intended release, not the committed workflow.** The workspace
-> split left `publish.yml` assuming a single package at the repository root: its tag check reads
-> the private root `package.json`, whose `version` is `undefined`, so **every tag fails the
-> guard**, and its publish step is a bare `npm publish` that never reaches the provider
-> packages. Cutting a release today fails rather than publishing something wrong. The corrected
-> file is written and verified but cannot be pushed from an agent session — GitHub refuses any
-> write under `.github/workflows/` without `workflow` scope — so it needs a human. The exact
-> content is in tektonic-46j.11's design field; tektonic-46j.12 tracks the install story that
-> depends on it.
-
 **They version together.** One tag governs all three, the workflow refuses to publish unless
 every `packages/*/package.json` carries that version, and core publishes first so the peer
-range the providers declare is already satisfiable. That keeps the peer range trivial while
+range the providers declare is satisfiable as soon as they go live. That keeps the peer range trivial while
 the seams are new; revisit independent versioning once they have held for a release or two.
 
-Publishing uses npm **trusted publishing** (OIDC): the workflow mints a short-lived credential
-from its `id-token: write` permission, so no npm token exists anywhere — not in the repo, not in
-the cluster. npm also generates a provenance attestation automatically, since this is a public
-package built from a public repo.
+Publishing uses npm **trusted publishing** (OIDC) with **staged publishing**: the workflow
+mints a short-lived credential from its `id-token: write` permission, so no npm token exists
+anywhere — not in the repo, not in the cluster — and uses it to *stage* each package with a
+provenance attestation. A staged version is not installable until a maintainer approves it
+with 2FA. The trusted publishers are deliberately left without npm's "publish directly"
+option, so push access to the repo is not enough to release; the approval is the gate.
 
 It lives in Actions rather than in Tektonic's own Tekton pipeline because npm only accepts
 GitHub Actions, GitLab CI/CD and CircleCI as OIDC issuers; a self-hosted cluster cannot be a
@@ -174,9 +166,20 @@ The registry is the channel; the git ref is not, and the README says so.
 
 1. Bump `version` in **every** `packages/*/package.json` to the same value, along with the
    peer range the providers declare on core, then commit and push to `main`.
-2. Tag the commit `vX.Y.Z` and push the tag. The workflow refuses to publish when the tag does
-   not match every package version, re-runs `npm test` and `npm run build`, and skips any
-   package already on the registry at that version — so re-running a release is safe.
+2. Tag the commit `vX.Y.Z` and push the tag. The workflow refuses to stage when the tag does
+   not match every package version, re-runs `npm test` and `npm run build`, and stages every
+   package not already on the registry at that version.
+3. Approve the stages with your passkey (npm 12+), **core first**:
+
+   ```bash
+   npm stage list @pfenerty/tektonic                  # note the stage id
+   npm stage approve <stage-id> --auth-type=web
+   # then the same for @pfenerty/tektonic-cache-gcs and @pfenerty/tektonic-reporter-github
+   ```
+
+   `npm stage download <stage-id>` fetches the tarball if you want to inspect it first, and
+   `npm stage reject <stage-id>` discards one. Re-running the workflow before approving stages
+   the package again — reject the duplicate.
 
 ### One-time setup
 
@@ -201,30 +204,13 @@ checkout (its `gitHead` is `4768acd`), and npm never lets a version be reused, s
 workspace release is 2.0.1. Check `gitHead` after any manual publish:
 `npm view @pfenerty/tektonic gitHead`.
 
-Where a package stands:
+Every package has had its first publish (core at 2.0.0, deprecated as stale; the providers at
+2.0.1), so this step should not be needed again unless a new package joins the workspace.
 
-| Package | First publish | Trusted publisher |
-|---|---|---|
-| `@pfenerty/tektonic` | done (2.0.0, stale — deprecated) | register |
-| `@pfenerty/tektonic-cache-gcs` | manual, at 2.0.1 | register after |
-| `@pfenerty/tektonic-reporter-github` | manual, at 2.0.1 | register after |
-
-Core does not need a manual 2.0.1 — once its trusted publisher is registered, the `v2.0.1` tag
-publishes it and skips the providers already on the registry at that version. Publish the
-providers only once the 2.0.1 bump is on `main`, so the peer range they declare on core matches
-what the tag will publish.
-
-Register the GitHub Actions publisher for each package, from the CLI (npm 11.10+, also
-2FA-gated). `npm trust` does not understand workspaces, so name each package:
-
-```bash
-for pkg in @pfenerty/tektonic @pfenerty/tektonic-cache-gcs @pfenerty/tektonic-reporter-github; do
-  npm trust github "$pkg" --repo pfenerty/tektonic --file publish.yml --auth-type=web
-done
-```
-
-or on npmjs.com → the package → Settings → Trusted Publishers. Every release after that goes
-through the tag alone.
+Then register the GitHub Actions publisher on npmjs.com → the package → Settings → Trusted
+Publisher: `pfenerty` / `tektonic` / `publish.yml`, Environment blank, and leave "can also
+publish directly" **unchecked**. Use the website: `npm trust github` returned a bare
+`400 Bad Request` for core. All three packages are registered this way.
 
 > Tokens are not a fallback here. npm revoked all classic automation tokens in December 2025,
 > granular tokens with write access expire within 90 days, and since July 2026 a granular token

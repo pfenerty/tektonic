@@ -1,8 +1,11 @@
 name: publish
 
-# Releases are cut by pushing a vX.Y.Z tag. This workflow publishes to npmjs through
-# trusted publishing (OIDC): no token is stored anywhere, and npm generates a provenance
-# attestation automatically for a public package built from a public repo.
+# Releases are cut by pushing a vX.Y.Z tag. This workflow *stages* each package on npmjs
+# through trusted publishing (OIDC): no token is stored anywhere, and each staged tarball
+# carries a provenance attestation. Nothing goes live until a maintainer approves the stage
+# with 2FA (`npm stage approve`), so push access to the repo alone cannot release anything.
+# The trusted publishers are deliberately left without "publish directly"; a plain
+# `npm publish` from here gets 403 "OIDC permission denied for this action".
 #
 # It lives here rather than in the Tekton self-CI pipeline because npm only accepts
 # GitHub Actions, GitLab CI/CD and CircleCI as OIDC issuers — a self-hosted cluster
@@ -30,9 +33,9 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted publishing needs npm >= 11.5.1; the runner's bundled npm can be older.
-      - name: Use an npm that supports trusted publishing
-        run: npm install -g npm@latest
+      # `npm stage` needs npm 12; the runner's bundled npm is older.
+      - name: Use an npm that supports staged publishing
+        run: npm install -g npm@^12.1.0
 
       - run: npm ci
 
@@ -56,11 +59,12 @@ jobs:
 
       - run: npm run build
 
-      # Re-running a release workflow is routine, and republishing an existing version is
-      # an npm error — treat "already there" as success, per package. Workspaces publish in
-      # the root's order, core first, so the providers' peer range on it is satisfiable the
-      # moment they appear on the registry.
-      - name: Publish
+      # Re-running a release workflow is routine, and a version already on the registry
+      # cannot be staged again — skip those, per package. Staged versions are not visible to
+      # `npm view` until approved, so a re-run before approval stages that package again;
+      # reject the extra stage. Workspaces stage in the root's order, core first, and core
+      # must be approved first so the providers' peer range on it is satisfiable.
+      - name: Stage
         run: |
           for ws in $(node -p "require('./package.json').workspaces.join(' ')"); do
             name=$(node -p "require('./${ws}/package.json').name")
@@ -69,5 +73,5 @@ jobs:
               echo "${name}@${version} is already on the registry, skipping"
               continue
             fi
-            npm publish -w "${name}" --access public
+            npm stage publish -w "${name}" --access public --provenance
           done
