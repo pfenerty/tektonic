@@ -10,7 +10,7 @@ name: publish
 # It lives here rather than in the Tekton self-CI pipeline because npm only accepts
 # GitHub Actions, GitLab CI/CD and CircleCI as OIDC issuers — a self-hosted cluster
 # cannot be a trusted publisher. Everything else (test, build, scan) still runs in Tekton
-# on push and pull_request; see .tektonic/.
+# on push and pull_request; see .tekton/.
 on:
   push:
     tags: ['v*']
@@ -33,7 +33,8 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # `npm stage` needs npm 12; the runner's bundled npm is older.
+      # `npm stage` needs npm 11.19 or later. Pin a known npm rather than rely on whichever
+      # one the runner's Node bundles.
       - name: Use an npm that supports staged publishing
         run: npm install -g npm@^12.1.0
 
