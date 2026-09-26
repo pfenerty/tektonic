@@ -276,7 +276,7 @@ new TektonicProject({
     // only; this project's compressed caches and status reporter need nushell, tar and
     // zstd, so it names an image that has them.
     injectedStepImage: DEFAULT_BASE_IMAGE,
-    repository: { url: "https://github.com/pfenerty/tektonic" },
+    repository: { url: "https://github.com/tektonic-ci/core" },
     // Provide the GitHub token (for status reporting + SARIF upload) via PAC's git-auth
     // secret at the pod level, so every step sees GITHUB_TOKEN.
     podTemplateEnv: [
