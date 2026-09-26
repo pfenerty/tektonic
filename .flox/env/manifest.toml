@@ -7,7 +7,8 @@ schema-version = "1.10.0"
 ##  $ flox show gum     <- show all versions of a package
 ## -------------------------------------------------------------------
 [install]
-nodejs.pkg-path = "nodejs"
+nodejs.pkg-path = "nodejs_24"
+nodejs.pkg-group = "nodejs"
 # gum.pkg-path = "gum"
 # gum.version = "^0.14.5"
 

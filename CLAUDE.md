@@ -11,7 +11,7 @@ flox activate -- npm run synth
 ```
 
 The environment is defined in `.flox/env/manifest.toml` and currently provides:
-- Node.js 24.13.0 (npm bundled)
+- Node.js 24 (`nodejs_24`, in its own package group so it can move ahead of the other pins; npm bundled, 11.19+ for `npm stage`)
 - Beads (`bd`) — AI-native issue tracker CLI
 - Repomix — codebase packer for AI context
 
