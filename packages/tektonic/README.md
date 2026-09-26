@@ -1,6 +1,6 @@
 # @pfenerty/tektonic
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/pfenerty/tektonic/blob/main/LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/tektonic-ci/core/blob/main/LICENSE)
 
 **Define Tekton CI/CD pipelines as strongly-typed TypeScript — declarative in spirit, without
 the pain of YAML.** Tektonic is a [cdk8s](https://cdk8s.io/)-based library for composing params,
@@ -9,7 +9,7 @@ workspaces, tasks, and pipelines as real code, then synthesizing in-repo
 runs directly from your repository.
 
 Full documentation lives in the repository:
-**[github.com/pfenerty/tektonic](https://github.com/pfenerty/tektonic)**.
+**[github.com/tektonic-ci/core](https://github.com/tektonic-ci/core)**.
 
 ## Install
 
@@ -72,13 +72,13 @@ npx tektonic lint      # shellcheck / nu-check / py_compile over your script fil
 
 ## Documentation
 
-- [Getting started](https://github.com/pfenerty/tektonic/blob/main/docs/getting-started.md)
-- [Agent guide](https://github.com/pfenerty/tektonic/blob/main/docs/agent-guide.md) — full API reference
-- [Caching](https://github.com/pfenerty/tektonic/blob/main/docs/caching.md) · [Custom cache backends](https://github.com/pfenerty/tektonic/blob/main/docs/cache-backends.md)
-- [Status reporters](https://github.com/pfenerty/tektonic/blob/main/docs/status-reporters.md)
-- [Scripting](https://github.com/pfenerty/tektonic/blob/main/docs/scripting.md) · [Testing pipelines](https://github.com/pfenerty/tektonic/blob/main/docs/testing.md)
-- [Architecture & internals](https://github.com/pfenerty/tektonic/blob/main/docs/architecture.md)
-- [Changelog](https://github.com/pfenerty/tektonic/blob/main/CHANGELOG.md)
+- [Getting started](https://github.com/tektonic-ci/core/blob/main/docs/getting-started.md)
+- [Agent guide](https://github.com/tektonic-ci/core/blob/main/docs/agent-guide.md) — full API reference
+- [Caching](https://github.com/tektonic-ci/core/blob/main/docs/caching.md) · [Custom cache backends](https://github.com/tektonic-ci/core/blob/main/docs/cache-backends.md)
+- [Status reporters](https://github.com/tektonic-ci/core/blob/main/docs/status-reporters.md)
+- [Scripting](https://github.com/tektonic-ci/core/blob/main/docs/scripting.md) · [Testing pipelines](https://github.com/tektonic-ci/core/blob/main/docs/testing.md)
+- [Architecture & internals](https://github.com/tektonic-ci/core/blob/main/docs/architecture.md)
+- [Changelog](https://github.com/tektonic-ci/core/blob/main/CHANGELOG.md)
 
 ## Requirements
 
@@ -92,4 +92,4 @@ npx tektonic lint      # shellcheck / nu-check / py_compile over your script fil
 
 ## License
 
-[Apache-2.0](https://github.com/pfenerty/tektonic/blob/main/LICENSE)
+[Apache-2.0](https://github.com/tektonic-ci/core/blob/main/LICENSE)
