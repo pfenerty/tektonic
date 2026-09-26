@@ -1,24 +1,20 @@
 {
   "name": "tektonic-workspace",
   "private": true,
-  "description": "Workspace root for @tektonic-ci/core and its provider packages",
+  "description": "Workspace root for @tektonic-ci/core",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/tektonic-ci/core.git"
   },
   "workspaces": [
-    "packages/tektonic",
-    "packages/tektonic-cache-gcs",
-    "packages/tektonic-reporter-github"
+    "packages/tektonic"
   ],
   "scripts": {
     "build": "tsc -b",
     "build:watch": "tsc -b --watch",
     "clean": "tsc -b --clean",
-    "lint:imports": "node scripts/check-provider-imports.mjs",
-    "test": "npm run lint:imports && npm run build && npm run typecheck && vitest run",
-    "typecheck": "npm run typecheck -w @tektonic-ci/cache-gcs -w @tektonic-ci/reporter-github",
+    "test": "npm run build && vitest run",
     "test:watch": "vitest",
     "lint:scripts": "npm run build && node packages/tektonic/dist/cli/index.js lint",
     "synth": "npm run build && node packages/tektonic/dist/cli/index.js synth examples/self-ci.ts",
@@ -26,9 +22,10 @@
     "graph": "npm run build && node packages/tektonic/dist/cli/index.js graph examples/self-ci.ts"
   },
   "devDependencies": {
+    "@tektonic-ci/reporter-github": "^2.1.1",
     "@types/node": "^26.0.0",
     "typescript": "~7.0.0",
-    "vitest": "^5.0.0",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
   }
 }

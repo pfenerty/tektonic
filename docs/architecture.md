@@ -16,8 +16,8 @@ the ceremony and stringly-typed fragility of hand-written YAML. Three principles
    (`injectedStepImage`), never from a registry the library picked.
 2. **Provider concerns are pluggable, and that is verified rather than asserted.** Caching,
    status reporting, scripting languages and *synthesis itself* are strategy interfaces, and
-   the Google Cloud Storage backend and the GitHub reporter ship as separate packages that
-   consume only the published surface — so "a third party could implement this" is a thing CI
+   the Google Cloud Storage backend and the GitHub reporter ship as separate packages, from
+   separate repos, that consume only the published surface — so "a third party could implement this" is a thing CI
    checks, not a claim. PAC is one `SynthTarget` among possible others, not the only way out.
 3. **The framework owns cross-cutting plumbing.** Exit-code capture, cache restore/save steps,
    git-clone, and status reporting are generated at synth time so consumers write intent, not
@@ -25,25 +25,24 @@ the ceremony and stringly-typed fragility of hand-written YAML. Three principles
 
 ## Layout
 
-The repository is an npm workspace of three packages. The split is not cosmetic: the two
-provider packages import nothing but `@tektonic-ci/core`'s published surface, which is the
-only evidence that the `CacheBackend`, `ArtifactStore` and `StatusReporter` seams support an
-implementation written outside this repo. The GCS package holds two unrelated strategies that
-happen to share a bucket and an auth story, so its name names a subset of its contents;
-tektonic-46j.18 decides whether that survives the first publish. `scripts/check-provider-imports.mjs` fails the build on a deep
-import or a relative path from a provider into core, and `npm test` runs it first.
+This repository holds core alone, in `packages/tektonic/`. The provider packages live in repos
+of their own, and the split is not cosmetic: they build and test against `@tektonic-ci/core`
+from npm, so they can import nothing but its published surface. That is the evidence that the
+`CacheBackend`, `ArtifactStore` and `StatusReporter` seams support an implementation written
+outside this repo, and it makes them the reference implementations to copy:
 
-```
-packages/
-├── tektonic/                    # @tektonic-ci/core — the core library (below)
-├── tektonic-cache-gcs/          # @tektonic-ci/cache-gcs — GcsBackend, GcsArtifactStore
-└── tektonic-reporter-github/    # @tektonic-ci/reporter-github — GitHubStatusReporter
-```
+| Package | Repo | Implements |
+|---|---|---|
+| `@tektonic-ci/cache-gcs` | [tektonic-ci/cache-gcs](https://github.com/tektonic-ci/cache-gcs) | `CacheBackend` (`GcsBackend`), `ArtifactStore` (`GcsArtifactStore`) |
+| `@tektonic-ci/reporter-github` | [tektonic-ci/reporter-github](https://github.com/tektonic-ci/reporter-github) | `StatusReporter` (`GitHubStatusReporter`) |
+
+The GCS package holds two unrelated strategies that happen to share a bucket and an auth
+story, so its name names a subset of its contents.
 
 Both providers take core as a **peer** dependency: a backend or reporter is matched to its
 task by object identity, and two copies of core are two incompatible sets of classes (the
-same reasoning as [job-libraries.md](job-libraries.md)). They version together with core for
-now, so the peer range stays simple.
+same reasoning as [job-libraries.md](job-libraries.md)). They version independently of core and
+declare a peer range on its major ([ADR 0002](adr/0002-npm-scope-and-versioning.md)).
 
 `PvcBackend` stays in core, deliberately. It is the default when `TaskCacheSpec.backend` is
 omitted and its `needsPvcWorkspace` drives workspace auto-registration in `TaskDef`, so core
@@ -79,8 +78,8 @@ src/
 ```
 
 Nothing under `core/` mentions PAC. `grep -r 'pipelinesascode\|PAC_' src/lib/core/` returning
-nothing is the check that the seam has not leaked back. The equivalent check for the provider
-seams is `npm run lint:imports`.
+nothing is the check that the seam has not leaked back. The provider seams need no such check:
+the providers live in other repos and get core from npm, so its internals are out of reach.
 
 Everything a consumer can touch is re-exported from `src/index.ts` — if it isn't there, it's
 internal. Keep that file the single source of truth for the public surface.

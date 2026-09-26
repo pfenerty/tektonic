@@ -11,12 +11,11 @@ npm install
 
 ## Commands
 
-All of these run from the repository root, across every workspace package.
+All of these run from the repository root.
 
 ```bash
-npm run build         # tsc -b across the workspace → packages/*/dist/
-npm test              # provider-import check, build, then the test suite (vitest)
-npm run lint:imports  # fail if a provider package reaches into core's internals
+npm run build         # tsc -b → packages/tektonic/dist/
+npm test              # build, then the test suite (vitest)
 npm run synth         # synthesize this repo's own CI → .tekton/
 npm run check         # fail if the committed .tekton/ output is stale
 npm run graph         # print the self-CI task DAG (FORMAT=mermaid for a flowchart)
@@ -28,21 +27,23 @@ npm run lint:scripts  # lint extracted .sh/.bash/.nu/.py files
 See [docs/architecture.md](docs/architecture.md) for how these pieces fit together and the
 extension points.
 
-The repository is an npm workspace of three packages:
+This repository holds core alone, `@tektonic-ci/core` in `packages/tektonic/`. The provider
+packages live in repos of their own, built and released against the published core:
 
-```
-packages/
-├── tektonic/                     # @tektonic-ci/core — the core library
-├── tektonic-cache-gcs/           # @tektonic-ci/cache-gcs — GcsBackend
-└── tektonic-reporter-github/     # @tektonic-ci/reporter-github — GitHubStatusReporter
-```
+| Package | Repo |
+|---|---|
+| `@tektonic-ci/reporter-github` — `GitHubStatusReporter` | [tektonic-ci/reporter-github](https://github.com/tektonic-ci/reporter-github) |
+| `@tektonic-ci/cache-gcs` — `GcsBackend`, `GcsArtifactStore` | [tektonic-ci/cache-gcs](https://github.com/tektonic-ci/cache-gcs) |
 
-The two provider packages take core as a **peer** dependency and may import it only through
-its published surface — no deep imports, no relative paths into core. That restriction is the
-point of the split, so it is enforced: `scripts/check-provider-imports.mjs` fails the build
-on a violation, and `npm test` runs it first. When a provider genuinely needs something core
-keeps internal, export it from `packages/tektonic/src/index.ts` and document it as supported
-API — that decision is what this check forces into the open.
+They take core as a **peer** dependency and can reach only its published surface, because
+that is all npm gives them. When a provider genuinely needs something core keeps internal,
+export it from `packages/tektonic/src/index.ts` and document it as supported API.
+
+This repo's own self-CI (`examples/self-ci.ts`) installs `@tektonic-ci/reporter-github` from
+npm like any other project, so its peer range has to admit the core in this tree. A new core
+**major** therefore can't run core's own CI until the reporter has published a release that
+widens its peer range — the release order in
+[ADR 0002](docs/adr/0002-npm-scope-and-versioning.md#versioning-continue-the-2x-line-and-version-each-package-independently).
 
 At a glance, inside `packages/tektonic` — every bare `src/…` path below is relative to it:
 
@@ -106,8 +107,7 @@ generates it stayed behind — the bumps were real, `npm run check` was red, and
 `npm run synth` would have reverted them.
 
 So the pins themselves are under Renovate now, through a `customManagers` regex in
-`renovate.json` covering `packages/tektonic/src/lib/constants.ts`,
-`packages/tektonic-cache-gcs/src/gcs-backend.ts` and `examples/self-ci.ts`. Add a file to that list when it grows a versioned image literal; a
+`renovate.json` covering `packages/tektonic/src/lib/constants.ts` and `examples/self-ci.ts`. Add a file to that list when it grows a versioned image literal; a
 floating tag such as `base:stable` is skipped, since the regex requires a leading digit.
 (`config:recommended` ignores `examples/` by default, which is why `ignorePaths` is spelled
 out in full without it.)
@@ -121,14 +121,10 @@ committed, and its exit code is folded into the GitHub status. **If it fails, ru
 
 ## Releasing
 
-Three packages are published to npmjs — `@tektonic-ci/core`,
-`@tektonic-ci/cache-gcs` and `@tektonic-ci/reporter-github` — by the `publish`
-GitHub Actions workflow (`.github/workflows/publish.yml`), triggered by a `vX.Y.Z` tag.
-
-**They version together.** One tag governs all three, the workflow refuses to publish unless
-every `packages/*/package.json` carries that version, and core publishes first so the peer
-range the providers declare is satisfiable as soon as they go live. That keeps the peer range trivial while
-the seams are new; revisit independent versioning once they have held for a release or two.
+`@tektonic-ci/core` is published to npmjs by the `publish` GitHub Actions workflow
+(`.github/workflows/publish.yml`), triggered by a `vX.Y.Z` tag. The provider packages release
+from their own repos, each with its own workflow and trusted publisher, and only when they
+change; the workflow refuses to publish unless the tag matches `packages/tektonic/package.json`.
 
 Publishing uses npm **trusted publishing** (OIDC) with **staged publishing**: the workflow
 mints a short-lived credential from its `id-token: write` permission, so no npm token exists
@@ -164,53 +160,47 @@ The registry is the channel; the git ref is not, and the README says so.
 
 ### Cutting a release
 
-1. Bump `version` in **every** `packages/*/package.json` to the same value, along with the
-   peer range the providers declare on core, then commit and push to `main`.
-2. Tag the commit `vX.Y.Z` and push the tag. The workflow refuses to stage when the tag does
-   not match every package version, re-runs `npm test` and `npm run build`, and stages every
-   package not already on the registry at that version.
-3. Approve the stages with your passkey, **core first**. `npm stage` needs npm 11.19 or later; the flox environment's npm has it, so run these inside `flox activate`:
+1. Bump `version` in `packages/tektonic/package.json`, move the CHANGELOG's "Unreleased"
+   entries under it, then commit and push to `main`.
+2. `git pull` and tag **the merged commit** on `main` as `vX.Y.Z`, then push the tag. A tag on
+   a stale local `main` names the wrong tree, and the workflow's version check is what stops it.
+   The workflow refuses to stage when the tag does not match the package version, re-runs
+   `npm test` and `npm run build`, and stages the package unless that version is already on the
+   registry.
+3. Approve the stage with your passkey. `npm stage` needs npm 11.19 or later; the flox
+   environment's npm has it, so run this inside `flox activate`. The stage id is on the
+   "staged with id" line of the workflow log, or:
 
    ```bash
    npm stage list @tektonic-ci/core                  # note the stage id
    npm stage approve <stage-id> --auth-type=web
-   # then the same for @tektonic-ci/cache-gcs and @tektonic-ci/reporter-github
    ```
 
    `npm stage download <stage-id>` fetches the tarball if you want to inspect it first, and
    `npm stage reject <stage-id>` discards one. Re-running the workflow before approving stages
    the package again — reject the duplicate.
 
+4. Check the release: `npm view @tektonic-ci/core@X.Y.Z gitHead` must be the tagged commit.
+
+A **major** release of core has an ordering constraint: the provider repos declare a peer range
+on core's major, and this repo's own self-CI installs `@tektonic-ci/reporter-github`. Publish a
+core prerelease, release the providers with a widened peer range, then release core
+([ADR 0002](docs/adr/0002-npm-scope-and-versioning.md)).
+
 ### One-time setup
 
-Trusted publishing is configured on a package that **already exists** — `npm trust` requires
-that too — so a package's very first publish is manual, and it needs an interactive 2FA
-challenge. Use web auth; it works with a passkey, which is the only 2FA method npm offers some
-accounts (there is no authenticator app, so no code to pass with `--otp`):
-
-```bash
-npm login --auth-type=web
-npm run build
-npm publish -w @tektonic-ci/cache-gcs --access public --auth-type=web
-```
-
-The publish prints an `Authenticate your account at: https://www.npmjs.com/auth/cli/…` link;
-approve it with the passkey and the CLI finishes. A brand-new package can 404 on `npm view`
-for several minutes afterwards while the registry CDN catches up — that is not a failed publish.
-
-Publish from an up-to-date checkout of `main`: the tarball is whatever is on disk. That is how
-`@tektonic-ci/core@2.0.0` went wrong — it was published by hand from a stale pre-split
-checkout (its `gitHead` is `4768acd`), and npm never lets a version be reused, so the first real
-workspace release is 2.0.1. Check `gitHead` after any manual publish:
-`npm view @tektonic-ci/core gitHead`.
-
-Every package has had its first publish (core at 2.0.0, deprecated as stale; the providers at
-2.0.1), so this step should not be needed again unless a new package joins the workspace.
+Trusted publishing is configured on a package page, and a name that has never been published
+has no page, so a new package's very first publish is manual. `@tektonic-ci/core` got a
+deprecated `0.0.0-bootstrap` placeholder on the `bootstrap` dist-tag for this, published with
+web auth (`npm login --auth-type=web`, then `npm publish --access public --tag bootstrap
+--auth-type=web`) because a passkey is the only 2FA some accounts have. A brand-new package can
+404 on `npm view` for a minute or more afterwards while the registry catches up — that is not a
+failed publish, and `npm deprecate` fails the same way until it does.
 
 Then register the GitHub Actions publisher on npmjs.com → the package → Settings → Trusted
-Publisher: `pfenerty` / `tektonic` / `publish.yml`, Environment blank, and leave "can also
+Publisher: `tektonic-ci` / `core` / `publish.yml`, Environment blank, and leave "can also
 publish directly" **unchecked**. Use the website: `npm trust github` returned a bare
-`400 Bad Request` for core. All three packages are registered this way.
+`400 Bad Request`. Each provider package is registered the same way against its own repo.
 
 > Tokens are not a fallback here. npm revoked all classic automation tokens in December 2025,
 > granular tokens with write access expire within 90 days, and since July 2026 a granular token

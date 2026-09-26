@@ -1,8 +1,6 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/tektonic" },
-    { "path": "./packages/tektonic-cache-gcs" },
-    { "path": "./packages/tektonic-reporter-github" }
+    { "path": "./packages/tektonic" }
   ]
 }
