@@ -169,7 +169,7 @@ The registry is the channel; the git ref is not, and the README says so.
 2. Tag the commit `vX.Y.Z` and push the tag. The workflow refuses to stage when the tag does
    not match every package version, re-runs `npm test` and `npm run build`, and stages every
    package not already on the registry at that version.
-3. Approve the stages with your passkey (npm 12+), **core first**:
+3. Approve the stages with your passkey, **core first**. `npm stage` needs npm 11.19 or later; the flox environment's npm has it, so run these inside `flox activate`:
 
    ```bash
    npm stage list @tektonic-ci/core                  # note the stage id
