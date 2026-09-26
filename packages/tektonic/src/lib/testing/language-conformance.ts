@@ -15,7 +15,7 @@ import type { ScriptLanguage, ScriptCtx } from '../script';
  * skim.
  *
  * ```ts
- * import { assertExitCodeContract, interpreterAvailable } from '@pfenerty/tektonic/testing';
+ * import { assertExitCodeContract, interpreterAvailable } from '@tektonic-ci/core/testing';
  *
  * it.skipIf(!interpreterAvailable('deno'))('honours the exit-code contract', () => {
  *   assertExitCodeContract(new DenoLanguage(), {

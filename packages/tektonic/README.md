@@ -1,4 +1,4 @@
-# @pfenerty/tektonic
+# @tektonic-ci/core
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/tektonic-ci/core/blob/main/LICENSE)
 
@@ -14,22 +14,22 @@ Full documentation lives in the repository:
 ## Install
 
 ```bash
-npm install @pfenerty/tektonic
+npm install @tektonic-ci/core
 ```
 
 Optional provider packages, each taking this one as a peer dependency:
 
 | Package | What it adds |
 |---|---|
-| [`@pfenerty/tektonic-cache-gcs`](https://www.npmjs.com/package/@pfenerty/tektonic-cache-gcs) | `gcs({ bucket })` — cache archives in a Google Cloud Storage bucket |
-| [`@pfenerty/tektonic-reporter-github`](https://www.npmjs.com/package/@pfenerty/tektonic-reporter-github) | `GitHubStatusReporter` — per-task GitHub commit statuses |
+| [`@tektonic-ci/cache-gcs`](https://www.npmjs.com/package/@tektonic-ci/cache-gcs) | `gcs({ bucket })` — cache archives in a Google Cloud Storage bucket |
+| [`@tektonic-ci/reporter-github`](https://www.npmjs.com/package/@tektonic-ci/reporter-github) | `GitHubStatusReporter` — per-task GitHub commit statuses |
 
 ## Quick example
 
 ```typescript
 import {
   Workspace, Task, GitPipeline, TektonicProject, TRIGGER_EVENTS, nu,
-} from '@pfenerty/tektonic';
+} from '@tektonic-ci/core';
 
 const workspace = new Workspace({ name: 'workspace' });
 

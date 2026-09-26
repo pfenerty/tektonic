@@ -15,7 +15,7 @@ A task becomes a catalog entry by carrying `catalog` metadata. Nothing about how
 changes; every other target ignores the field.
 
 ```typescript
-import { Task, Param, Result } from '@pfenerty/tektonic';
+import { Task, Param, Result } from '@tektonic-ci/core';
 
 const url = new Param({ name: 'url', description: 'Repository URL to clone from' });
 const commit = new Result({ name: 'commit', description: 'Full commit SHA' });
@@ -138,7 +138,7 @@ re-cutting one.
 ## Consuming it back
 
 ```typescript
-import { HubTaskRef, Param, Workspace } from '@pfenerty/tektonic';
+import { HubTaskRef, Param, Workspace } from '@tektonic-ci/core';
 
 const clone = new HubTaskRef({
   catalog: 'tekton',

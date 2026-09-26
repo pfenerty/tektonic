@@ -1,4 +1,4 @@
-# @pfenerty/tektonic
+# @tektonic-ci/core
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
@@ -44,19 +44,19 @@ files underneath.
 
 | Package | What it is |
 |---|---|
-| [`@pfenerty/tektonic`](packages/tektonic) | The library: primitives, pipelines, PAC/Tekton synthesis, the `tektonic` CLI, and the PVC cache backend |
-| [`@pfenerty/tektonic-cache-gcs`](packages/tektonic-cache-gcs) | `gcs({ bucket })` — cache archives in a Google Cloud Storage bucket |
-| [`@pfenerty/tektonic-reporter-github`](packages/tektonic-reporter-github) | `GitHubStatusReporter` — per-task GitHub commit statuses |
+| [`@tektonic-ci/core`](packages/tektonic) | The library: primitives, pipelines, PAC/Tekton synthesis, the `tektonic` CLI, and the PVC cache backend |
+| [`@tektonic-ci/cache-gcs`](packages/tektonic-cache-gcs) | `gcs({ bucket })` — cache archives in a Google Cloud Storage bucket |
+| [`@tektonic-ci/reporter-github`](packages/tektonic-reporter-github) | `GitHubStatusReporter` — per-task GitHub commit statuses |
 
-The provider packages take `@pfenerty/tektonic` as a peer dependency and version together with
+The provider packages take `@tektonic-ci/core` as a peer dependency and version together with
 it. Install only what you use.
 
 ## Install
 
 ```bash
-npm install @pfenerty/tektonic@^2.0.1
+npm install @tektonic-ci/core@^2.0.1
 # optional, as needed:
-npm install @pfenerty/tektonic-cache-gcs @pfenerty/tektonic-reporter-github
+npm install @tektonic-ci/cache-gcs @tektonic-ci/reporter-github
 ```
 
 `cdk8s` and `constructs` come with it as regular dependencies — install them yourself only if
@@ -64,7 +64,7 @@ your code imports them directly. These need no registry configuration or auth. R
 `vX.Y.Z`, published through npm trusted publishing (OIDC, with a provenance attestation and no
 stored token); see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
-> **Use 2.0.1 or later.** `@pfenerty/tektonic@2.0.0` on npm was published by mistake from a
+> **Use 2.0.1 or later.** `@tektonic-ci/core@2.0.0` on npm was published by mistake from a
 > stale pre-split tree and is deprecated; 2.0.1 is the first real release of all three packages.
 > The git ref that worked before the workspace split (`npm install github:pfenerty/tektonic`) is
 > not a fallback and is no longer supported: it now resolves to the private workspace root and
@@ -76,7 +76,7 @@ stored token); see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 ```typescript
 import {
   Workspace, Task, GitPipeline, TektonicProject, TRIGGER_EVENTS, nu,
-} from '@pfenerty/tektonic';
+} from '@tektonic-ci/core';
 
 const workspace = new Workspace({ name: 'workspace' });
 
@@ -111,7 +111,7 @@ is inferred from the extension and the body is testable on its own:
 
 ```typescript
 import * as path from 'path';
-import { scriptFromFile } from '@pfenerty/tektonic';
+import { scriptFromFile } from '@tektonic-ci/core';
 
 steps: [{ name: 'fmt', image: goImage, script: scriptFromFile(path.join(__dirname, 'fmt.nu')) }]
 ```

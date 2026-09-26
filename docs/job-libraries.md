@@ -34,7 +34,7 @@ An action is a reusable, versioned unit with **declared, typed inputs** and **ty
 rendered to steps at synth time:
 
 ```typescript
-import { defineAction, sh, type ActionOutput } from '@pfenerty/tektonic';
+import { defineAction, sh, type ActionOutput } from '@tektonic-ci/core';
 
 export const syft = defineAction<{ image: string }, 'sbom'>({
   name: 'syft',
@@ -177,7 +177,7 @@ Where the bytes actually go is a separate concern, behind `ArtifactStore`. The d
 `WorkspaceArtifactStore` keeps them in a per-producer subtree of the workspace the pipeline
 already binds — one writer per subtree, unlike a bare agreed-upon path. Setting
 `artifactStore` swaps the transport without touching the declaration, the handle types or the
-checks above — `gcsArtifacts()` from `@pfenerty/tektonic-cache-gcs` needs no workspace at all,
+checks above — `gcsArtifacts()` from `@tektonic-ci/cache-gcs` needs no workspace at all,
 which is what frees a pipeline's tasks to schedule across nodes. Tektonic can also record what
 each task read and wrote as TEP-0147 provenance for Tekton Chains, which is off by default.
 Both are in [artifacts.md](artifacts.md); the reasoning, and the options that lost, are in
@@ -202,7 +202,7 @@ hand-written step lives under.
 A job is a function from an options object to a `Task`. Nothing more.
 
 ```typescript
-import { Task, Workspace, type Action, type StatusReporter } from '@pfenerty/tektonic';
+import { Task, Workspace, type Action, type StatusReporter } from '@tektonic-ci/core';
 import { syft, grype } from './actions';
 
 export interface DepScanOptions {
@@ -252,7 +252,7 @@ env, workspace. `taskPreset` states those once, so neither your own tasks nor a 
 wrapper has to restate them:
 
 ```typescript
-import { taskPreset } from '@pfenerty/tektonic';
+import { taskPreset } from '@tektonic-ci/core';
 
 const ciTask = taskPreset({
   statusReporter,
@@ -298,7 +298,7 @@ major version:
 | `StatusReporter`, `CacheBackend`, `ScriptLanguage`, `SynthTarget` | strategy interfaces to implement |
 | `registerLanguage(lang, { extensions })` | register a `ScriptLanguage` and get its tagged-template helper |
 | `PAC_PARAMS`, `PAC_EVENT_ENV` | the PAC-supplied params and event context |
-| `@pfenerty/tektonic/testing` | `synthPipeline` / `synthTask` for the library's own tests |
+| `@tektonic-ci/core/testing` | `synthPipeline` / `synthTask` for the library's own tests |
 
 Anything prefixed `_` (`_buildSpec`, `_toPipelineTaskSpec`, `_overrides`) is internal
 plumbing: it is exported for the library's own use across modules, not for yours.
@@ -328,7 +328,7 @@ Job factories are ordinary functions returning ordinary objects, so test them wi
 in-memory helpers ([testing.md](testing.md)):
 
 ```typescript
-import { synthTask } from '@pfenerty/tektonic/testing';
+import { synthTask } from '@tektonic-ci/core/testing';
 
 it('hands the SBOM to the scanner', () => {
   const view = synthTask(depScanTask({ image: 'app:1.0', workspace }));
@@ -343,13 +343,13 @@ integration test composes it into a `Task` and calls `synthTask`.
 
 ## Packaging
 
-A job library is a normal npm package that takes `@pfenerty/tektonic` as a **peer** dependency,
+A job library is a normal npm package that takes `@tektonic-ci/core` as a **peer** dependency,
 so the consumer's copy of the library is the one in use — task identity is object identity, and
 two copies of tektonic mean two incompatible `Task` classes.
 
 ```json
 {
-  "peerDependencies": { "@pfenerty/tektonic": "^2.0.0" },
-  "devDependencies": { "@pfenerty/tektonic": "^2.0.0" }
+  "peerDependencies": { "@tektonic-ci/core": "^2.0.0" },
+  "devDependencies": { "@tektonic-ci/core": "^2.0.0" }
 }
 ```

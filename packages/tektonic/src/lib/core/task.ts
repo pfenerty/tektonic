@@ -215,7 +215,7 @@ export interface TaskCacheSpec {
      * `workspace` property) when omitted.
      *
      * Set an out-of-tree backend to store archives elsewhere — `gcs({ bucket, prefix? })`
-     * from `@pfenerty/tektonic-cache-gcs`, or your own. See docs/cache-backends.md.
+     * from `@tektonic-ci/cache-gcs`, or your own. See docs/cache-backends.md.
      */
     backend?: CacheBackend;
     /**

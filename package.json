@@ -1,7 +1,7 @@
 {
   "name": "tektonic-workspace",
   "private": true,
-  "description": "Workspace root for @pfenerty/tektonic and its provider packages",
+  "description": "Workspace root for @tektonic-ci/core and its provider packages",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -18,7 +18,7 @@
     "clean": "tsc -b --clean",
     "lint:imports": "node scripts/check-provider-imports.mjs",
     "test": "npm run lint:imports && npm run build && npm run typecheck && vitest run",
-    "typecheck": "npm run typecheck -w @pfenerty/tektonic-cache-gcs -w @pfenerty/tektonic-reporter-github",
+    "typecheck": "npm run typecheck -w @tektonic-ci/cache-gcs -w @tektonic-ci/reporter-github",
     "test:watch": "vitest",
     "lint:scripts": "npm run build && node packages/tektonic/dist/cli/index.js lint",
     "synth": "npm run build && node packages/tektonic/dist/cli/index.js synth examples/self-ci.ts",

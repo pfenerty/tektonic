@@ -8,7 +8,7 @@ import { EXIT_CODE_PATH, languageFor, Script, stepExitCodePath } from '../lib/sc
 /**
  * A {@link StatusReporter} for core's own tests.
  *
- * The built-in reporter now lives in `@pfenerty/tektonic-reporter-github`, which depends on
+ * The built-in reporter now lives in `@tektonic-ci/reporter-github`, which depends on
  * this package — core cannot import it back without a cycle, and should not want to: what
  * core's tests assert is the *contract* (a pending task per reporter group, a final step
  * that reads the exit-code file, a reconciler task carrying `$(tasks.X.status)` as a param),

@@ -7,9 +7,9 @@ task that reconciles anything left pending.
 
 | Reporter | Package |
 |---|---|
-| GitHub Commit Status API | `@pfenerty/tektonic-reporter-github` |
+| GitHub Commit Status API | `@tektonic-ci/reporter-github` |
 
-There is no built-in reporter in `@pfenerty/tektonic`, on purpose. `StatusReporter` is a
+There is no built-in reporter in `@tektonic-ci/core`, on purpose. `StatusReporter` is a
 strategy interface, and the GitHub implementation lives outside core so the interface is
 exercised by a real out-of-tree consumer instead of by code that could quietly reach into
 internals. That package imports nothing but this package's published surface, and a
@@ -19,7 +19,7 @@ reach breaks there first.
 ## The interface
 
 ```ts
-import type { StatusReporter } from '@pfenerty/tektonic';
+import type { StatusReporter } from '@tektonic-ci/core';
 
 interface StatusReporter {
   readonly requiredParams: Param[];
@@ -148,8 +148,8 @@ See [docs/cache-backends.md](cache-backends.md#image-resolution) for the full or
 ## Using one
 
 ```ts
-import { Task } from '@pfenerty/tektonic';
-import { GitHubStatusReporter } from '@pfenerty/tektonic-reporter-github';
+import { Task } from '@tektonic-ci/core';
+import { GitHubStatusReporter } from '@tektonic-ci/reporter-github';
 
 const statusReporter = new GitHubStatusReporter({ skipTokenInjection: true });
 

@@ -13,7 +13,7 @@ The default backend stores archives on a Kubernetes PersistentVolumeClaim. Decla
 workspace, attach the cache to a task, and register the workspace's PVC with the project:
 
 ```typescript
-import { Workspace, Task, TektonicProject } from '@pfenerty/tektonic';
+import { Workspace, Task, TektonicProject } from '@tektonic-ci/core';
 
 const nodeCache = new Workspace({ name: 'node-cache' });
 
@@ -49,7 +49,7 @@ authenticated via Workload Identity. There's no workspace and nothing to registe
 project:
 
 ```typescript
-import { gcs } from '@pfenerty/tektonic-cache-gcs';  // npm install @pfenerty/tektonic-cache-gcs
+import { gcs } from '@tektonic-ci/cache-gcs';  // npm install @tektonic-ci/cache-gcs
 
 caches: [{
   name: 'node-modules',
@@ -76,7 +76,7 @@ All fields live on `TaskCacheSpec` (the entries in a task's `caches` array):
 | `key` | required | Files whose combined content sets the cache key. `[]` = fixed hash (always hits after the first run) |
 | `paths` | required | Paths (relative to `workingDir`) to restore on hit and save on miss |
 | `workspace` | — | PVC for the archive. Required for PVC backend; ignored for GCS |
-| `backend` | PVC | `gcs({ bucket, prefix?, image? })` from `@pfenerty/tektonic-cache-gcs`, or any custom `CacheBackend` |
+| `backend` | PVC | `gcs({ bucket, prefix?, image? })` from `@tektonic-ci/cache-gcs`, or any custom `CacheBackend` |
 | `workingDir` | — | Base dir for `key`/`paths`; usually `$(workspaces.workspace.path)` |
 | `image` | backend default | Image for the injected restore/save steps. Falls back to the backend's own default, then to the project's `injectedStepImage` — see [cache-backends.md](cache-backends.md#image-resolution) |
 | `compress` | `false` | Pack into one `.tar.zst` archive instead of copying file trees |

@@ -32,9 +32,9 @@ The repository is an npm workspace of three packages:
 
 ```
 packages/
-├── tektonic/                     # @pfenerty/tektonic — the core library
-├── tektonic-cache-gcs/           # @pfenerty/tektonic-cache-gcs — GcsBackend
-└── tektonic-reporter-github/     # @pfenerty/tektonic-reporter-github — GitHubStatusReporter
+├── tektonic/                     # @tektonic-ci/core — the core library
+├── tektonic-cache-gcs/           # @tektonic-ci/cache-gcs — GcsBackend
+└── tektonic-reporter-github/     # @tektonic-ci/reporter-github — GitHubStatusReporter
 ```
 
 The two provider packages take core as a **peer** dependency and may import it only through
@@ -121,8 +121,8 @@ committed, and its exit code is folded into the GitHub status. **If it fails, ru
 
 ## Releasing
 
-Three packages are published to npmjs — `@pfenerty/tektonic`,
-`@pfenerty/tektonic-cache-gcs` and `@pfenerty/tektonic-reporter-github` — by the `publish`
+Three packages are published to npmjs — `@tektonic-ci/core`,
+`@tektonic-ci/cache-gcs` and `@tektonic-ci/reporter-github` — by the `publish`
 GitHub Actions workflow (`.github/workflows/publish.yml`), triggered by a `vX.Y.Z` tag.
 
 **They version together.** One tag governs all three, the workflow refuses to publish unless
@@ -151,12 +151,12 @@ problem:
 ```
 npm install github:pfenerty/tektonic
 # -> added 1 package: node_modules/tektonic-workspace
-# -> no dist/, no bin, require.resolve('@pfenerty/tektonic') throws
+# -> no dist/, no bin, require.resolve('@tektonic-ci/core') throws
 ```
 
 The ref resolves to the repository root, which is now the private `tektonic-workspace` package:
 no `main`, no `exports`, no `bin`, and none of the `prepare: npm run build` that made the git
-ref work when the root *was* `@pfenerty/tektonic`. npm has no way to install a subdirectory of
+ref work when the root *was* `@tektonic-ci/core`. npm has no way to install a subdirectory of
 a git dependency, so there is no ref that reaches `packages/tektonic` either. The install
 reports success and leaves the consumer with nothing.
 
@@ -172,9 +172,9 @@ The registry is the channel; the git ref is not, and the README says so.
 3. Approve the stages with your passkey (npm 12+), **core first**:
 
    ```bash
-   npm stage list @pfenerty/tektonic                  # note the stage id
+   npm stage list @tektonic-ci/core                  # note the stage id
    npm stage approve <stage-id> --auth-type=web
-   # then the same for @pfenerty/tektonic-cache-gcs and @pfenerty/tektonic-reporter-github
+   # then the same for @tektonic-ci/cache-gcs and @tektonic-ci/reporter-github
    ```
 
    `npm stage download <stage-id>` fetches the tarball if you want to inspect it first, and
@@ -191,7 +191,7 @@ accounts (there is no authenticator app, so no code to pass with `--otp`):
 ```bash
 npm login --auth-type=web
 npm run build
-npm publish -w @pfenerty/tektonic-cache-gcs --access public --auth-type=web
+npm publish -w @tektonic-ci/cache-gcs --access public --auth-type=web
 ```
 
 The publish prints an `Authenticate your account at: https://www.npmjs.com/auth/cli/…` link;
@@ -199,10 +199,10 @@ approve it with the passkey and the CLI finishes. A brand-new package can 404 on
 for several minutes afterwards while the registry CDN catches up — that is not a failed publish.
 
 Publish from an up-to-date checkout of `main`: the tarball is whatever is on disk. That is how
-`@pfenerty/tektonic@2.0.0` went wrong — it was published by hand from a stale pre-split
+`@tektonic-ci/core@2.0.0` went wrong — it was published by hand from a stale pre-split
 checkout (its `gitHead` is `4768acd`), and npm never lets a version be reused, so the first real
 workspace release is 2.0.1. Check `gitHead` after any manual publish:
-`npm view @pfenerty/tektonic gitHead`.
+`npm view @tektonic-ci/core gitHead`.
 
 Every package has had its first publish (core at 2.0.0, deprecated as stale; the providers at
 2.0.1), so this step should not be needed again unless a new package joins the workspace.

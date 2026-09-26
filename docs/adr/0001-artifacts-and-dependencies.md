@@ -230,7 +230,7 @@ One external collision to state plainly: upstream Tekton calls its TEP-0147 prov
   shows the shape survives a second implementation.
 - ~~A store-backed `ArtifactStore` implementation, when cross-node scheduling or a PVC-less
   pipeline is actually wanted.~~ Done in tektonic-46j.15: `GcsArtifactStore` in
-  `@pfenerty/tektonic-cache-gcs`, sharing `cache/shared.ts`'s script and compression helpers
+  `@tektonic-ci/cache-gcs`, sharing `cache/shared.ts`'s script and compression helpers
   as this ADR called for, and not built on `CacheBackend`.
 - ~~Emit TEP-0147 artifact provenance for declared artifacts, feeding Tekton Chains alongside
   the existing `ChainsImage` integration.~~ Done in tektonic-46j.15, off by default behind

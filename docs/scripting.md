@@ -14,7 +14,7 @@ exit-code contract the framework owns for you, and how to test scripts.
 `TaskStepSpec.script` accepts a `ScriptInput`, which is one of:
 
 ```typescript
-import { sh, bash, nu, py, script, scriptFromFile } from '@pfenerty/tektonic';
+import { sh, bash, nu, py, script, scriptFromFile } from '@tektonic-ci/core';
 
 // 1. Tagged template — inline, language inferred from the tag
 script: sh`echo "hello from POSIX sh"`
@@ -71,7 +71,7 @@ run the script directly in a test. A task then becomes a thin, declarative wrapp
 ```typescript
 // jobs/go-fmt/spec.ts
 import * as path from 'path';
-import { Task, scriptFromFile } from '@pfenerty/tektonic';
+import { Task, scriptFromFile } from '@tektonic-ci/core';
 import { goImage, statusReporter } from '../../shared';
 
 export const goFmt = new Task({
@@ -143,7 +143,7 @@ helper, so registration and use are one step and the call site never names a str
 
 ```typescript
 // @acme/tektonic-lang-ruby
-import { registerLanguage, type ScriptCtx, type ScriptLanguage } from '@pfenerty/tektonic';
+import { registerLanguage, type ScriptCtx, type ScriptLanguage } from '@tektonic-ci/core';
 
 class Ruby implements ScriptLanguage {
   readonly name = 'ruby';
@@ -194,12 +194,12 @@ Registry rules worth knowing:
 
 #### Proving the contract
 
-`@pfenerty/tektonic/testing` exports `assertExitCodeContract`, which renders a body through
+`@tektonic-ci/core/testing` exports `assertExitCodeContract`, which renders a body through
 your `wrap`, executes it with the real interpreter, and asserts both the process exit code
 and the contract file:
 
 ```typescript
-import { assertExitCodeContract, interpreterAvailable } from '@pfenerty/tektonic/testing';
+import { assertExitCodeContract, interpreterAvailable } from '@tektonic-ci/core/testing';
 
 it.skipIf(!interpreterAvailable('ruby'))('honours the exit-code contract', () => {
   assertExitCodeContract(new Ruby(), {
@@ -268,7 +268,7 @@ fine: an early return from a body with nothing to do cannot hide a failure. When
 itself carries meaning (a watchdog signalling a specific code), state that at the call site:
 
 ```typescript
-import { nu, unsafeAllowExit } from '@pfenerty/tektonic';
+import { nu, unsafeAllowExit } from '@tektonic-ci/core';
 
 script: unsafeAllowExit(nu`if $over_budget { exit 99 }`)
 ```
@@ -281,7 +281,7 @@ tag, or state the opt-out with `rawScript()` when the step writes `EXIT_CODE_PAT
 runs an interpreter tektonic has no plugin for:
 
 ```typescript
-import { rawScript } from '@pfenerty/tektonic';
+import { rawScript } from '@tektonic-ci/core';
 
 script: rawScript(`#!/usr/bin/env ruby\n# this step owns its own exit-code handling\n...`)
 ```
@@ -301,7 +301,7 @@ A `fragment` is dedented on its own and **re-indented wherever it is interpolate
 depth, and fragments compose:
 
 ```typescript
-import { fragment, sh } from '@pfenerty/tektonic';
+import { fragment, sh } from '@tektonic-ci/core';
 
 const retry = fragment`
   n=0
@@ -323,7 +323,7 @@ Some work is shell work — a `trap`, a polling loop over a cgroup file, a tool 
 `exec`'d from `sh`. `embedSh` embeds a POSIX `sh` body inside a nushell script as a fragment:
 
 ```typescript
-import { embedSh, nu } from '@pfenerty/tektonic';
+import { embedSh, nu } from '@tektonic-ci/core';
 
 const watchdog = embedSh(
   `limit=$1
@@ -372,7 +372,7 @@ the process exit code and the captured contract file.
 
 ```typescript
 import { spawnSync } from 'child_process';
-import { Nushell } from '@pfenerty/tektonic';
+import { Nushell } from '@tektonic-ci/core';
 
 const wrapped = new Nushell().wrap(
   'error make {msg: "boom"}',

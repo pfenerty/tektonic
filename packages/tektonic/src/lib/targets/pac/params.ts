@@ -11,7 +11,7 @@ import { Param } from '../../core/param';
  *
  * @example
  * ```ts
- * import { PAC_PARAMS, nu, Task } from '@pfenerty/tektonic';
+ * import { PAC_PARAMS, nu, Task } from '@tektonic-ci/core';
  *
  * new Task({
  *   name: 'notify',

@@ -4,8 +4,8 @@ Tektonic ships two cache backends, in two packages:
 
 | Backend | Package | Class | Factory | Storage |
 |---|---|---|---|---|
-| PVC (default) | `@pfenerty/tektonic` | `PvcBackend` | _(no factory; omit `backend`)_ | Kubernetes PersistentVolumeClaim |
-| GCS | `@pfenerty/tektonic-cache-gcs` | `GcsBackend` | `gcs({ bucket, prefix?, image? })` | Google Cloud Storage bucket |
+| PVC (default) | `@tektonic-ci/core` | `PvcBackend` | _(no factory; omit `backend`)_ | Kubernetes PersistentVolumeClaim |
+| GCS | `@tektonic-ci/cache-gcs` | `GcsBackend` | `gcs({ bucket, prefix?, image? })` | Google Cloud Storage bucket |
 
 When `TaskCacheSpec.backend` is omitted, Tektonic uses `PvcBackend` automatically.
 
@@ -17,9 +17,9 @@ auto-register the cache workspace on the task and prepend it to finally-task wor
 bindings. Core cannot synthesize a task without knowing about it, so it is the *reference
 implementation* of this interface, not a bundled provider.
 
-`GcsBackend` has no such tie, so it moved out to `@pfenerty/tektonic-cache-gcs`. That is not
+`GcsBackend` has no such tie, so it moved out to `@tektonic-ci/cache-gcs`. That is not
 tidiness: it is the only evidence this interface supports an out-of-tree implementation. That
-package imports nothing but `@pfenerty/tektonic`'s published surface — a build-time check
+package imports nothing but `@tektonic-ci/core`'s published surface — a build-time check
 fails the build on a deep import or a relative path into core — so anything a third-party
 backend needs and cannot reach breaks there first, in CI, rather than in your project.
 
@@ -41,7 +41,7 @@ exports the pieces `GcsBackend` and `PvcBackend` both use:
 | `stagedExtract(spec, label, extract)` | Extracts through a staging dir and swaps each path in, instead of `rm -rf`-ing a tree another task on the same workspace may be reading |
 | `COMPRESSED_CACHE_LANGUAGE` / `PORTABLE_CACHE_LANGUAGE` | `'nushell'` and `'sh'` — the languages the built-in paths use |
 
-These are supported API, and `@pfenerty/tektonic-cache-gcs` consumes them through the package
+These are supported API, and `@tektonic-ci/cache-gcs` consumes them through the package
 root like any other caller. `cacheScript`, `threadFlag` and the language constants are useful
 to `ArtifactStore` authors too — an artifact store compresses the same way, and `threadFlag`
 is typed on the field it reads rather than on `TaskCacheSpec` so it can be called without one.
@@ -55,8 +55,8 @@ compiled against it) that is invisible until it bites.
 To write a custom backend, implement `CacheBackend`:
 
 ```typescript
-import type { CacheBackend, BackendCtx } from '@pfenerty/tektonic';
-import type { TaskCacheSpec, TaskStepSpec } from '@pfenerty/tektonic';
+import type { CacheBackend, BackendCtx } from '@tektonic-ci/core';
+import type { TaskCacheSpec, TaskStepSpec } from '@tektonic-ci/core';
 
 /** Your backend's image default lives beside your backend, not in tektonic's core. */
 const DEFAULT_S3_CACHE_IMAGE = 'ghcr.io/example/aws-cli:stable';
@@ -168,7 +168,7 @@ The built-ins follow it. `PvcBackend` has no image of its own: an uncompressed c
 `ctx.defaultImage`, a compressed one asks for `nushell`/`tar`/`zstd`. `GcsBackend` asks for
 those plus `gcloud`, and yields to `gcs({ bucket, image: 'ghcr.io/example/gcloud:pinned' })`
 and then to `spec.image`. `DEFAULT_GCS_CACHE_IMAGE`, exported from
-`@pfenerty/tektonic-cache-gcs`, is one image known to satisfy the GCS set:
+`@tektonic-ci/cache-gcs`, is one image known to satisfy the GCS set:
 
 ```ts
 gcs({ bucket: 'my-ci-cache', image: DEFAULT_GCS_CACHE_IMAGE })

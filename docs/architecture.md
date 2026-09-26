@@ -26,7 +26,7 @@ the ceremony and stringly-typed fragility of hand-written YAML. Three principles
 ## Layout
 
 The repository is an npm workspace of three packages. The split is not cosmetic: the two
-provider packages import nothing but `@pfenerty/tektonic`'s published surface, which is the
+provider packages import nothing but `@tektonic-ci/core`'s published surface, which is the
 only evidence that the `CacheBackend`, `ArtifactStore` and `StatusReporter` seams support an
 implementation written outside this repo. The GCS package holds two unrelated strategies that
 happen to share a bucket and an auth story, so its name names a subset of its contents;
@@ -35,9 +35,9 @@ import or a relative path from a provider into core, and `npm test` runs it firs
 
 ```
 packages/
-├── tektonic/                    # @pfenerty/tektonic — the core library (below)
-├── tektonic-cache-gcs/          # @pfenerty/tektonic-cache-gcs — GcsBackend, GcsArtifactStore
-└── tektonic-reporter-github/    # @pfenerty/tektonic-reporter-github — GitHubStatusReporter
+├── tektonic/                    # @tektonic-ci/core — the core library (below)
+├── tektonic-cache-gcs/          # @tektonic-ci/cache-gcs — GcsBackend, GcsArtifactStore
+└── tektonic-reporter-github/    # @tektonic-ci/reporter-github — GitHubStatusReporter
 ```
 
 Both providers take core as a **peer** dependency: a backend or reporter is matched to its
@@ -263,7 +263,7 @@ to any registered name, still autocompleting the built-ins. A name may be regist
 
 The one thing a language may not choose is the exit-code contract — a `wrap` that ignores
 `captureExitCode` reports a failed step as green, silently. `assertExitCodeContract` from
-`@pfenerty/tektonic/testing` renders, executes and asserts it, so an out-of-tree language can
+`@tektonic-ci/core/testing` renders, executes and asserts it, so an out-of-tree language can
 prove compliance; `src/lib/script/runtime.test.ts` is the same pattern written by hand.
 
 ### `CacheBackend` (`src/lib/core/cache-backend.ts`)
@@ -276,7 +276,7 @@ itself (the GCS backend does), and step images resolve `spec.image` → backend 
 workspace and wire finally-task workspaces — and is also what `TektonicProject` reads to
 decide whether to bind a PVC, rather than matching on `type === 'gcs'` as it once did.
 `PvcBackend` is the in-core reference implementation; `GcsBackend` ships in
-`@pfenerty/tektonic-cache-gcs`. The shared key-hashing and compression helpers in
+`@tektonic-ci/cache-gcs`. The shared key-hashing and compression helpers in
 `src/lib/cache/shared.ts` are exported from the package root as supported API for backend
 authors — every backend needs the same hash semantics, and divergence there is a silent cache
 miss. See [cache-backends.md](cache-backends.md).
@@ -297,7 +297,7 @@ produces and that the producer is a transitive `needs` of the consumer. Those ch
 copying — are what the primitive is for. `WorkspaceArtifactStore` is the in-core default and
 keeps artifacts in a per-producer subtree of the ephemeral workspace, so each subtree has one
 writer; it inherits that workspace's single-RWO-PVC constraint. `GcsArtifactStore`, in
-`@pfenerty/tektonic-cache-gcs`, is the implementation that lifts it: producer uploads, consumer
+`@tektonic-ci/cache-gcs`, is the implementation that lifts it: producer uploads, consumer
 downloads, no workspace bound on either side. An optional `uri(artifact)` lets a store name a
 location that outlives the pod, which is what artifact provenance records.
 
@@ -317,7 +317,7 @@ writes. The second source exists because the first is written *by the wrapped sc
 calling nushell's untrappable `exit` terminates before the wrapper can persist anything and
 leaves a stale `0`. Only the user steps are consulted — the injected cache steps also run with
 `onError: 'continue'`, but a failed cache save must stay non-fatal. There is no in-core
-reporter: `GitHubStatusReporter` ships in `@pfenerty/tektonic-reporter-github`, and core's own
+reporter: `GitHubStatusReporter` ships in `@tektonic-ci/reporter-github`, and core's own
 tests use a fixture implementation of the interface (`src/__fixtures__/reporter.ts`) so what
 they assert is the contract rather than GitHub's wire format. The optional
 `createStatusReconcilerTask`/`createSkipResolverTask` pair is feature-detected by `Pipeline`;

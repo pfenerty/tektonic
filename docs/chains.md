@@ -41,7 +41,7 @@ Chains records what a build produced as provenance *subjects* from results whose
 the step paths to write into, keeping the build task declarative:
 
 ```typescript
-import { ChainsImage, Task, sh } from '@pfenerty/tektonic';
+import { ChainsImage, Task, sh } from '@tektonic-ci/core';
 
 const api = new ChainsImage({ name: 'api' });   // → api-IMAGE_URL, api-IMAGE_DIGEST
 

@@ -74,7 +74,7 @@ function normalizeExtension(ext: string): string {
  *
  * One thing a language may not opt out of is the exit-code contract: a `wrap` that ignores
  * {@link ScriptCtx.captureExitCode} reports a failed step as green. Prove compliance with
- * `assertExitCodeContract` from `@pfenerty/tektonic/testing`.
+ * `assertExitCodeContract` from `@tektonic-ci/core/testing`.
  *
  * @throws if the name is empty, or already registered — silently overriding a language
  * would change every body that uses it, at a distance.
