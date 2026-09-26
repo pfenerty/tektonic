@@ -156,6 +156,7 @@ spec:
           resources:
             requests:
               storage: 3Gi
+          storageClassName: local-path
     - name: cache
       persistentVolumeClaim:
         claimName: tektonic-cache

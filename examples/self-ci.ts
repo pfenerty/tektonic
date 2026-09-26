@@ -270,6 +270,9 @@ new TektonicProject({
     pipelines: [pushPipeline, prPipeline],
     outdir: ".tekton",
     workspaceStorageSize: "3Gi",
+    // The cluster's default class, nfs-client, has no running provisioner, so its claims
+    // never bind. local-path is what ocidex uses too.
+    workspaceStorageClass: "local-path",
     caches: [{ workspace: cacheWs, storageSize: "5Gi", storageClassName: "local-path" }],
     // Image for the steps tektonic injects (git clone, cache restore/save, status
     // reporting). The library falls back to a neutral public image providing sh + git
