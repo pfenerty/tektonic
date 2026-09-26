@@ -75,7 +75,7 @@ into package.json, imports, peer ranges and trusted-publisher config:
 - Every file that names a package has to change as each repo moves:
   - package.json `name` and `peerDependencies`;
   - the docs' import examples;
-  - the `check-provider-imports.mjs` core name (until that script is removed in tektonic-uru.8);
+  - the `check-provider-imports.mjs` core name (removed in tektonic-uru.8);
   - `examples/self-ci.ts`.
 - `CHANGELOG.md` records the rename in the first `@tektonic-ci/core` release. Each provider's
   changelog continues in its own repo from 2.0.1.

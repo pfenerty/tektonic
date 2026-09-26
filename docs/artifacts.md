@@ -197,6 +197,6 @@ expect(synthTask(build).stepNames).toEqual(['compile', 'publish-dist-artifact'])
 expect(`${build.artifacts.dist}`).toBe(build.artifacts.dist.path);
 ```
 
-`packages/tektonic-cache-gcs/src/gcs-artifact-store.test.ts` is the worked example, including
+[`src/gcs-artifact-store.test.ts`](https://github.com/tektonic-ci/cache-gcs/blob/main/src/gcs-artifact-store.test.ts) in tektonic-ci/cache-gcs is the worked example, including
 the assertion that swapping stores changes no `produces`/`consumes` declaration — which is the
 property the seam exists to have. See [testing.md](testing.md).

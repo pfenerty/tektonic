@@ -1,8 +1,22 @@
 # Changelog
 
-Notable changes to `@tektonic-ci/core` and its provider packages, which version together
-until each provider moves to a repo of its own. This file starts at the first change after
-2.0.0; earlier history is in the git log.
+Notable changes to `@tektonic-ci/core`. Up to 2.1.0 the provider packages lived in this repo
+and versioned together with core, so the entries below cover them too. From 2.1.1 they
+release from their own repos and log changes there:
+[reporter-github](https://github.com/tektonic-ci/reporter-github/blob/main/CHANGELOG.md),
+[cache-gcs](https://github.com/tektonic-ci/cache-gcs/blob/main/CHANGELOG.md). This file starts
+at the first change after 2.0.0; earlier history is in the git log.
+
+## Unreleased
+
+### Changed: this repo holds core only
+
+`@tektonic-ci/reporter-github` and `@tektonic-ci/cache-gcs` moved to
+[tektonic-ci/reporter-github](https://github.com/tektonic-ci/reporter-github) and
+[tektonic-ci/cache-gcs](https://github.com/tektonic-ci/cache-gcs), history included, and
+publish from there. Nothing about `@tektonic-ci/core`'s API or output changes. The
+`lint:imports` check and `scripts/check-provider-imports.mjs` are gone: a provider built
+against core from npm cannot deep-import it in the first place.
 
 ## 2.1.0
 

@@ -45,11 +45,13 @@ files underneath.
 | Package | What it is |
 |---|---|
 | [`@tektonic-ci/core`](packages/tektonic) | The library: primitives, pipelines, PAC/Tekton synthesis, the `tektonic` CLI, and the PVC cache backend |
-| [`@tektonic-ci/cache-gcs`](packages/tektonic-cache-gcs) | `gcs({ bucket })` — cache archives in a Google Cloud Storage bucket |
-| [`@tektonic-ci/reporter-github`](packages/tektonic-reporter-github) | `GitHubStatusReporter` — per-task GitHub commit statuses |
+| [`@tektonic-ci/cache-gcs`](https://github.com/tektonic-ci/cache-gcs) | `gcs({ bucket })` — cache archives in a Google Cloud Storage bucket |
+| [`@tektonic-ci/reporter-github`](https://github.com/tektonic-ci/reporter-github) | `GitHubStatusReporter` — per-task GitHub commit statuses |
 
-The provider packages take `@tektonic-ci/core` as a peer dependency and version together with
-it. Install only what you use.
+Core lives in this repo; each provider package has a repo of its own, takes `@tektonic-ci/core`
+as a peer dependency and versions independently. Install only what you use. The providers are
+also the reference implementations of core's extension points — start from one to write your
+own backend or reporter.
 
 ## Install
 

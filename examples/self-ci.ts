@@ -11,7 +11,7 @@ import {
 } from "../packages/tektonic/dist/index.js";
 // The GitHub reporter is a separate package: this file consumes it exactly as any other
 // project does, through its own package root.
-import { GitHubStatusReporter } from "../packages/tektonic-reporter-github/dist/index.js";
+import { GitHubStatusReporter } from "@tektonic-ci/reporter-github";
 
 // ─── Images ──────────────────────────────────────────────────────────────────
 const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:24";

@@ -7,14 +7,14 @@ task that reconciles anything left pending.
 
 | Reporter | Package |
 |---|---|
-| GitHub Commit Status API | `@tektonic-ci/reporter-github` |
+| GitHub Commit Status API | [`@tektonic-ci/reporter-github`](https://github.com/tektonic-ci/reporter-github) |
 
 There is no built-in reporter in `@tektonic-ci/core`, on purpose. `StatusReporter` is a
 strategy interface, and the GitHub implementation lives outside core so the interface is
 exercised by a real out-of-tree consumer instead of by code that could quietly reach into
-internals. That package imports nothing but this package's published surface, and a
-build-time check fails the build on a deep import — so anything you would need and cannot
-reach breaks there first.
+internals. It lives in its own repo, [tektonic-ci/reporter-github](https://github.com/tektonic-ci/reporter-github), and builds against
+core from npm, so anything you would need and cannot reach breaks there first. It is also
+the reference implementation to start from when writing your own reporter.
 
 ## The interface
 

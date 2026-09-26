@@ -5,7 +5,7 @@ Tektonic ships two cache backends, in two packages:
 | Backend | Package | Class | Factory | Storage |
 |---|---|---|---|---|
 | PVC (default) | `@tektonic-ci/core` | `PvcBackend` | _(no factory; omit `backend`)_ | Kubernetes PersistentVolumeClaim |
-| GCS | `@tektonic-ci/cache-gcs` | `GcsBackend` | `gcs({ bucket, prefix?, image? })` | Google Cloud Storage bucket |
+| GCS | [`@tektonic-ci/cache-gcs`](https://github.com/tektonic-ci/cache-gcs) | `GcsBackend` | `gcs({ bucket, prefix?, image? })` | Google Cloud Storage bucket |
 
 When `TaskCacheSpec.backend` is omitted, Tektonic uses `PvcBackend` automatically.
 
@@ -18,10 +18,11 @@ bindings. Core cannot synthesize a task without knowing about it, so it is the *
 implementation* of this interface, not a bundled provider.
 
 `GcsBackend` has no such tie, so it moved out to `@tektonic-ci/cache-gcs`. That is not
-tidiness: it is the only evidence this interface supports an out-of-tree implementation. That
-package imports nothing but `@tektonic-ci/core`'s published surface — a build-time check
-fails the build on a deep import or a relative path into core — so anything a third-party
-backend needs and cannot reach breaks there first, in CI, rather than in your project.
+tidiness: it is the only evidence this interface supports an out-of-tree implementation. It
+lives in its own repo, [tektonic-ci/cache-gcs](https://github.com/tektonic-ci/cache-gcs), and builds against `@tektonic-ci/core`
+from npm, so it can reach nothing but the published surface — anything a third-party backend
+needs and cannot reach breaks there first, in its CI, rather than in your project. Start from
+it when writing a backend of your own.
 
 The asymmetry is therefore deliberate: one backend core owns, one backend that proves the
 seam. If you are weighing whether something belongs in core, `needsPvcWorkspace` is the test

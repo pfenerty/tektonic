@@ -177,7 +177,7 @@ Where the bytes actually go is a separate concern, behind `ArtifactStore`. The d
 `WorkspaceArtifactStore` keeps them in a per-producer subtree of the workspace the pipeline
 already binds — one writer per subtree, unlike a bare agreed-upon path. Setting
 `artifactStore` swaps the transport without touching the declaration, the handle types or the
-checks above — `gcsArtifacts()` from `@tektonic-ci/cache-gcs` needs no workspace at all,
+checks above — `gcsArtifacts()` from [`@tektonic-ci/cache-gcs`](https://github.com/tektonic-ci/cache-gcs) needs no workspace at all,
 which is what frees a pipeline's tasks to schedule across nodes. Tektonic can also record what
 each task read and wrote as TEP-0147 provenance for Tekton Chains, which is off by default.
 Both are in [artifacts.md](artifacts.md); the reasoning, and the options that lost, are in

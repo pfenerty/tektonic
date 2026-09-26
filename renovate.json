@@ -37,7 +37,6 @@
       "customType": "regex",
       "managerFilePatterns": [
         "packages/tektonic/src/lib/constants.ts",
-        "packages/tektonic-cache-gcs/src/gcs-backend.ts",
         "examples/self-ci.ts"
       ],
       "matchStrings": [
