@@ -24,10 +24,7 @@ spec:
           - ALL
     workingDir: $(workspaces.workspace.path)
   steps:
-    - env:
-        - name: CLOUDSDK_CONFIG
-          value: /tekton/home/.config/gcloud
-      image: ghcr.io/pfenerty/apko-cicd/gcloud:581.0.0
+    - image: ghcr.io/pfenerty/apko-cicd/base:stable
       name: restore-npm-cache
       script: |-
         #!/usr/bin/env nu
@@ -42,24 +39,16 @@ spec:
           log $"restore-npm-cache: paths already exist, skipping restore ($hash)"
           exit 0
         }
+        let archive = $"$(workspaces.cache.path)/($hash).tar.zst"
 
-        let object = $"npm/($hash).tar.zst"
-        let gcs_url = $"gs://tektonic-ci-cache/($object)"
-        log $"restore-npm-cache: checking ($gcs_url)"
-
-        let exists = ((^gcloud storage ls $gcs_url | complete).exit_code == 0)
-        if $exists {
-          let size = (
-            ^gcloud storage ls -l $gcs_url
-            | lines | first | str trim | split words | first | into int
-          )
-          log $"restore-npm-cache: hit ($hash) size=(($size / 1_000_000) | math round --precision 1)MB"
-          log "restore-npm-cache: downloading ..."
+        if ($archive | path exists) {
+          let archive_size = (ls $archive | get size.0)
+          log $"restore-npm-cache: hit ($hash) size=($archive_size)"
           let t0 = (date now)
           let stage = $".cache-restore-(random uuid)"
           mkdir $stage
           try {
-            ^gcloud --verbosity=error storage cp $gcs_url - | ^zstd -d -T0 -c | ^tar xf - -C $stage -o --no-same-permissions
+            ^zstd -d -T1 -c $archive | ^tar xf - -C $stage -o --no-same-permissions
           } catch { |e|
             rm -rf $stage
             log $"restore-npm-cache: extract failed \(($e.msg)\)"
@@ -86,10 +75,9 @@ spec:
           }
           rm -rf $stage
           let elapsed = (((date now) - $t0) | into int) / 1_000_000_000
-          let speed = (if $elapsed > 0 { ($size / 1_000_000) / $elapsed | math round --precision 1 } else { 0 })
-          log $"restore-npm-cache: restored in ($elapsed)s ($speed) MB/s"
+          log $"restore-npm-cache: restored in ($elapsed)s"
         } else {
-          log $"restore-npm-cache: miss ($hash) — object not found in bucket"
+          log $"restore-npm-cache: miss ($hash)"
         }
       workingDir: $(workspaces.workspace.path)
     - image: ghcr.io/pfenerty/apko-cicd/nodejs:24
@@ -112,10 +100,7 @@ spec:
         printf '%s' "$__tek_prev" > /tekton/home/.exit-code
         exit "$__tek_rc"
       workingDir: $(workspaces.workspace.path)
-    - env:
-        - name: CLOUDSDK_CONFIG
-          value: /tekton/home/.config/gcloud
-      image: ghcr.io/pfenerty/apko-cicd/gcloud:581.0.0
+    - image: ghcr.io/pfenerty/apko-cicd/base:stable
       name: save-npm-cache
       onError: continue
       script: |-
@@ -124,10 +109,8 @@ spec:
         let hash = (try { open --raw /tekton/home/.cache-npm-hash | str trim } catch { "" })
         if ($hash | is-empty) { log "save-npm-cache: no hash, skipping"; exit 0 }
 
-        let object = $"npm/($hash).tar.zst"
-        let gcs_url = $"gs://tektonic-ci-cache/($object)"
-        let already_exists = ((^gcloud storage ls $gcs_url | complete).exit_code == 0)
-        if $already_exists { log $"save-npm-cache: ($hash) exists, skipping"; exit 0 }
+        let archive = $"$(workspaces.cache.path)/($hash).tar.zst"
+        if ($archive | path exists) { log $"save-npm-cache: ($hash) exists, skipping"; exit 0 }
 
         let paths = ["node_modules"] | where { |p| ($p | path exists) }
         if ($paths | is-empty) { log "save-npm-cache: no paths to cache"; exit 0 }
@@ -136,43 +119,32 @@ spec:
 
         let max = 3
         if $max > 0 {
-          let entries = (try {
-            ^gcloud storage ls -l $"gs://tektonic-ci-cache/npm/*.tar.zst"
-            | lines
-            | where { |l| $l | str ends-with ".tar.zst" }
-            | each { |l|
-                let parts = ($l | str trim | split row -r '\s+')
-                { url: ($parts | last), created: ($parts | get 1) }
-              }
-            | sort-by created | reverse | skip $max
-          } catch { [] })
-          for e in $entries {
-            let result = (^gcloud storage rm $e.url | complete)
-            if $result.exit_code == 0 {
-              log $"save-npm-cache: evicted ($e.url)"
-            } else {
-              log $"save-npm-cache: warn: failed to evict ($e.url): ($result.stderr)"
-            }
-          }
+          let entries = (try { ls $(workspaces.cache.path)/*.tar.zst | sort-by modified | reverse | skip $max } catch { [] })
+          for e in $entries { log $"save-npm-cache: evicting ($e.name | path basename)"; rm $e.name }
         }
 
         let uncompressed = ($paths | each { |p| try { du $p | get apparent.0 | into int } catch { 0 } } | math sum)
-        log $"save-npm-cache: compressing (($uncompressed / 1_000_000) | math round --precision 1)MB ..."
-        let tmp = $"$(workspaces.workspace.path)/cache-($hash).tar.zst"
+        log $"save-npm-cache: compressing (($uncompressed / 1_000_000) | math round --precision 1)MB uncompressed ..."
         let t0 = (date now)
-        ^tar cf - ...$paths | ^zstd -3 -T0 -o $tmp
-        let compress_elapsed = (((date now) - $t0) | into int) / 1_000_000_000
-        let compressed = (ls $tmp | get size.0 | into int)
-        let ratio = (if $compressed > 0 { $uncompressed / $compressed | math round --precision 1 } else { 0 })
-        log $"save-npm-cache: compressed to (($compressed / 1_000_000) | math round --precision 1)MB ratio=($ratio)x in ($compress_elapsed)s"
-
-        log "save-npm-cache: uploading ..."
-        let t1 = (date now)
-        ^gcloud storage cp $tmp $gcs_url
-        rm $tmp
-        let upload_elapsed = (((date now) - $t1) | into int) / 1_000_000_000
-        let speed = (if $upload_elapsed > 0 { ($compressed / 1_000_000) / $upload_elapsed | math round --precision 1 } else { 0 })
-        log $"save-npm-cache: uploaded ($gcs_url) in ($upload_elapsed)s ($speed) MB/s"
+        # Write to a temp path and rename into place: a step killed mid-write (OOM, eviction,
+        # timeout) must never leave a truncated archive at the real hash-keyed path, since the
+        # skip-if-exists guard above means a corrupt archive there would never self-heal.
+        let tmp = $"($archive).tmp.(random uuid)"
+        # nushell aborts the enclosing block as soon as any external command in the pipe
+        # reports a non-zero exit (e.g. tar failing to read one of $paths), so cleanup must
+        # live in a catch — code placed after the pipe but outside try/catch never runs.
+        try {
+          ^tar cf - ...$paths | ^zstd -1 -T1 -o $tmp
+        } catch { |e|
+          rm -f $tmp
+          log $"save-npm-cache: compress failed (($e.msg)), discarding partial archive"
+          exit 1
+        }
+        mv -f $tmp $archive
+        let elapsed = (((date now) - $t0) | into int) / 1_000_000_000
+        let compressed = (ls $archive | get size.0)
+        let ratio = ($uncompressed / ($compressed | into int) | math round --precision 1)
+        log $"save-npm-cache: saved ($compressed) ratio=($ratio)x in ($elapsed)s"
       workingDir: $(workspaces.workspace.path)
     - env: []
       image: ghcr.io/pfenerty/apko-cicd/base:stable
@@ -206,4 +178,5 @@ spec:
         }
         exit $exit_code
   workspaces:
+    - name: cache
     - name: workspace

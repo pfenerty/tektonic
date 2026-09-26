@@ -5,7 +5,7 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "5"
     pipelinesascode.tekton.dev/on-event: "[pull_request]"
     pipelinesascode.tekton.dev/on-target-branch: "[*]"
-    pipelinesascode.tekton.dev/task: "[.tektonic/tasks/set-status-pending-npm-push.k8s.yaml, .tektonic/tasks/git-clone.k8s.yaml, .tektonic/tasks/test-npm.k8s.yaml, .tektonic/tasks/anchore-scan.k8s.yaml, .tektonic/tasks/reconcile-status-npm-push.k8s.yaml, .tektonic/tasks/set-status-pending-npm-pull-request.k8s.yaml, .tektonic/tasks/build-npm.k8s.yaml, .tektonic/tasks/reconcile-status-npm-pull-request.k8s.yaml]"
+    pipelinesascode.tekton.dev/task: "[.tekton/tasks/set-status-pending-npm-push.k8s.yaml, .tekton/tasks/git-clone.k8s.yaml, .tekton/tasks/test-npm.k8s.yaml, .tekton/tasks/anchore-scan.k8s.yaml, .tekton/tasks/reconcile-status-npm-push.k8s.yaml, .tekton/tasks/set-status-pending-npm-pull-request.k8s.yaml, .tekton/tasks/build-npm.k8s.yaml, .tekton/tasks/reconcile-status-npm-pull-request.k8s.yaml]"
   name: tektonic-npm-pull-request
 spec:
   params:
@@ -87,6 +87,8 @@ spec:
           kind: Task
           name: tektonic-test-npm
         workspaces:
+          - name: cache
+            workspace: cache
           - name: workspace
             workspace: workspace
       - name: build-npm
@@ -102,6 +104,8 @@ spec:
           kind: Task
           name: tektonic-build-npm
         workspaces:
+          - name: cache
+            workspace: cache
           - name: workspace
             workspace: workspace
       - name: anchore-scan
@@ -118,10 +122,13 @@ spec:
           kind: Task
           name: tektonic-anchore-scan
         workspaces:
+          - name: cache
+            workspace: cache
           - name: workspace
             workspace: workspace
     workspaces:
       - name: workspace
+      - name: cache
   taskRunTemplate:
     podTemplate:
       env:
@@ -149,3 +156,7 @@ spec:
           resources:
             requests:
               storage: 3Gi
+          storageClassName: local-path
+    - name: cache
+      persistentVolumeClaim:
+        claimName: tektonic-cache

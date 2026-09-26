@@ -166,7 +166,7 @@ flox activate -- npm install       # install dependencies
 flox activate -- npm run build     # tsc -b → packages/*/dist/
 flox activate -- npm test          # provider-import check, build, then tests
 flox activate -- npm run lint:scripts  # lint extracted .sh/.bash/.nu/.py files
-flox activate -- npm run synth     # synthesize this repo's own CI into .tektonic/
+flox activate -- npm run synth     # synthesize this repo's own CI into .tekton/
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/architecture.md](docs/architecture.md) to work
