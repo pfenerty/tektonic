@@ -342,6 +342,9 @@ Longer-form decisions, with the options that lost and why, live in [adr/](adr/):
 - [ADR 0001 — An artifacts/dependencies primitive](adr/0001-artifacts-and-dependencies.md):
   why declared subpaths on the shared workspace beat a store-backed artifact service for now,
   and why Tekton's own `artifacts` are provenance rather than transport.
+- [ADR 0002 — npm scope and versioning under the tektonic-ci org](adr/0002-npm-scope-and-versioning.md):
+  why the packages become `@tektonic-ci/*`, and why they continue the 2.x line with
+  independent versions after the repo split.
 
 ## Testing
 
