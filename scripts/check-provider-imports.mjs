@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Packages held to the rule, and the core package they may only reach through its exports. */
-const CORE = '@pfenerty/tektonic';
+const CORE = '@tektonic-ci/core';
 const PROVIDERS = ['packages/tektonic-cache-gcs', 'packages/tektonic-reporter-github'];
 /** Subpaths `CORE` publishes in its `exports` map. Anything else is a deep import. */
 const PUBLIC_SUBPATHS = new Set([CORE, `${CORE}/testing`]);

@@ -1,6 +1,6 @@
 # Getting started
 
-This guide walks through building a complete Tekton CI pipeline using `@pfenerty/tektonic`. By the end you'll have tasks, a pipeline, GitHub webhook triggers, and synthesized YAML ready to apply to your cluster.
+This guide walks through building a complete Tekton CI pipeline using `@tektonic-ci/core`. By the end you'll have tasks, a pipeline, GitHub webhook triggers, and synthesized YAML ready to apply to your cluster.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ This guide walks through building a complete Tekton CI pipeline using `@pfenerty
 ## 1. Install dependencies
 
 ```bash
-npm install @pfenerty/tektonic
+npm install @tektonic-ci/core
 npm install -D typescript @types/node
 ```
 
@@ -21,7 +21,7 @@ Params and workspaces are the data-passing primitives in Tekton. Create them as 
 ```typescript
 import {
   Param, Workspace, Task, GitPipeline, TektonicProject, TRIGGER_EVENTS,
-} from '@pfenerty/tektonic';
+} from '@tektonic-ci/core';
 
 const workspace = new Workspace({ name: 'workspace' });
 ```
@@ -122,11 +122,11 @@ kubectl apply -f .tekton/*-repository.k8s.yaml
 ## 7. (Optional) Add GitHub status reporting
 
 Report commit statuses back to GitHub so pull requests show CI results inline. The GitHub
-reporter ships as its own package — `npm install @pfenerty/tektonic-reporter-github` — and
+reporter ships as its own package — `npm install @tektonic-ci/reporter-github` — and
 attaches to any task that should report:
 
 ```typescript
-import { GitHubStatusReporter } from '@pfenerty/tektonic-reporter-github';
+import { GitHubStatusReporter } from '@tektonic-ci/reporter-github';
 
 const statusReporter = new GitHubStatusReporter();
 // Requires a 'github-token' Secret in the namespace with key 'token'

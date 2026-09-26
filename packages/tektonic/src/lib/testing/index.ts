@@ -9,10 +9,10 @@ import type { InjectedStepImage } from '../core/injected-image';
  * Test helpers for asserting what a pipeline definition synthesizes to, in memory — no files
  * written, no cluster involved.
  *
- * Import from `@pfenerty/tektonic/testing`:
+ * Import from `@tektonic-ci/core/testing`:
  *
  * ```ts
- * import { synthPipeline, synthTask } from '@pfenerty/tektonic/testing';
+ * import { synthPipeline, synthTask } from '@tektonic-ci/core/testing';
  *
  * it('skips the Go tasks on a frontend-only PR', () => {
  *   const pr = synthPipeline(prPipeline);

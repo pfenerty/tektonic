@@ -1,6 +1,6 @@
 # The `tektonic` CLI
 
-Installing `@pfenerty/tektonic` puts a `tektonic` binary on your `PATH` (via `npx tektonic`, or
+Installing `@tektonic-ci/core` puts a `tektonic` binary on your `PATH` (via `npx tektonic`, or
 directly from `node_modules/.bin`). It drives *your* project definition — the file that
 constructs a `TektonicProject` — so synthesis and drift-checking do not have to be reinvented in
 every consumer's Makefile.

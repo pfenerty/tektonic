@@ -13,13 +13,13 @@ A complete reference for agents creating Tekton CI/CD pipelines with this librar
 ## Installation
 
 ```bash
-npm install @pfenerty/tektonic
+npm install @tektonic-ci/core
 ```
 
 `tektonic` bundles and version-manages `cdk8s` and `constructs` for you — you do
 not need to install or declare them separately. The few cdk8s/constructs types
 you might need for advanced usage (`App`, `Chart`, `ChartProps`, `Construct`,
-`ApiObject`) are re-exported from `@pfenerty/tektonic`.
+`ApiObject`) are re-exported from `@tektonic-ci/core`.
 
 Create a pipeline file (e.g. `ci/pipeline.ts`) and run it:
 
@@ -37,7 +37,7 @@ import {
   TektonicProject,
   TRIGGER_EVENTS,
   sh,
-} from '@pfenerty/tektonic';
+} from '@tektonic-ci/core';
 
 // One task: run tests
 const test = new Task({
@@ -71,7 +71,7 @@ new TektonicProject({
 ## Param
 
 ```typescript
-import { Param } from '@pfenerty/tektonic';
+import { Param } from '@tektonic-ci/core';
 
 const ref = new Param({ name: 'ref', type: 'string' });
 
@@ -94,7 +94,7 @@ Params declared on a task are automatically collected and surfaced at the pipeli
 ## Workspace
 
 ```typescript
-import { Workspace } from '@pfenerty/tektonic';
+import { Workspace } from '@tektonic-ci/core';
 
 const ws = new Workspace({ name: 'source' });
 
@@ -164,7 +164,7 @@ reusable work *inside* one — typed inputs, typed outputs, a version, rendering
 task that composes it. Use it for the cheap case where a separate pod would buy nothing:
 
 ```typescript
-import { defineAction, sh, type ActionOutput } from '@pfenerty/tektonic';
+import { defineAction, sh, type ActionOutput } from '@tektonic-ci/core';
 
 const syft = defineAction<{ image: string }, 'sbom'>({
   name: 'syft',
@@ -217,7 +217,7 @@ Actions are pod-internal. For a reusable unit that is its *own* pod, that is a j
 ## GitPipeline
 
 ```typescript
-import { GitPipeline, TRIGGER_EVENTS } from '@pfenerty/tektonic';
+import { GitPipeline, TRIGGER_EVENTS } from '@tektonic-ci/core';
 
 const pipeline = new GitPipeline({
   name: 'my-pipeline',
@@ -373,7 +373,7 @@ caches: [{ workspace: npmCache, storageSize: '5Gi' }]
 | `name` | required | Step name prefix (`restore-{name}-cache`) |
 | `key` | required | Key files; `[]` = fixed hash (always hits after first run) |
 | `paths` | required | Paths to cache relative to `workingDir` |
-| `backend` | PVC | `gcs({ bucket, prefix? })` from `@pfenerty/tektonic-cache-gcs`, or your own `CacheBackend` |
+| `backend` | PVC | `gcs({ bucket, prefix? })` from `@tektonic-ci/cache-gcs`, or your own `CacheBackend` |
 | `workspace` | — | Required for PVC backend |
 | `compress` | `false` | zstd compression into `.tar.zst` archive |
 | `compressionLevel` | `1` | zstd level 1–19 |
@@ -416,7 +416,7 @@ Tasks in one project usually agree on more than they differ — the same reporte
 base env, workspace — and restating that per task is where it drifts. A preset states it once:
 
 ```typescript
-import { taskPreset } from '@pfenerty/tektonic';
+import { taskPreset } from '@tektonic-ci/core';
 
 const ciTask = taskPreset({
   statusReporter,
@@ -438,7 +438,7 @@ take one directly instead of declaring a matching `Param` and hand-writing `$(pa
 script — where a typo is a template that silently never substitutes.
 
 ```typescript
-import { PAC_PARAMS, nu, Task } from '@pfenerty/tektonic';
+import { PAC_PARAMS, nu, Task } from '@tektonic-ci/core';
 
 new Task({
   name: 'notify',
@@ -470,7 +470,7 @@ env: [{ name: 'GOMODCACHE', value: ws.at('.go-mod') }],
 ## GitHub Status Reporting
 
 ```typescript
-import { GitHubStatusReporter } from '@pfenerty/tektonic-reporter-github';
+import { GitHubStatusReporter } from '@tektonic-ci/reporter-github';
 
 const reporter = new GitHubStatusReporter();
 // optional: new GitHubStatusReporter({ tokenSecretName: 'my-secret' })
@@ -492,7 +492,7 @@ The reporter appends a final step that calls the GitHub Commit Status API. It re
 Tasks can declare typed results that downstream tasks (or the pipeline itself) reference via Tekton interpolation expressions.
 
 ```typescript
-import { Result } from '@pfenerty/tektonic';
+import { Result } from '@tektonic-ci/core';
 
 const commit = new Result({ name: 'commit', description: 'Full commit SHA' });
 const branch = new Result({ name: 'branch' });
@@ -542,7 +542,7 @@ echo "Building commit ${commit}"`,
 `HubTaskRef` lets you reference a Tekton Task published on [ArtifactHub](https://artifacthub.io/packages/search?kind=7) without writing a local Task definition. The resolver-based `taskRef` is synthesized automatically.
 
 ```typescript
-import { HubTaskRef } from '@pfenerty/tektonic';
+import { HubTaskRef } from '@tektonic-ci/core';
 
 const gitClone = new HubTaskRef({
   taskName: 'git-clone',
@@ -589,7 +589,7 @@ values — name them, reuse them across tasks, and unit-test them. They compile 
 guards.
 
 ```typescript
-import { Task, onBranch, onBranchMatching, equals, and, not } from '@pfenerty/tektonic';
+import { Task, onBranch, onBranchMatching, equals, and, not } from '@tektonic-ci/core';
 
 const test = new Task({
   name: 'test',
@@ -630,7 +630,7 @@ boolean result, then returns a `Condition` gating on it. The detection task is *
 the graph — no manual `needs`.
 
 ```typescript
-import { Task, onBranch, onChanges, or } from '@pfenerty/tektonic';
+import { Task, onBranch, onChanges, or } from '@tektonic-ci/core';
 
 const integration = new Task({
   name: 'integration',
@@ -680,7 +680,7 @@ an array `Result`; a downstream task fans out over it into one TaskRun per eleme
 `matrix`. The number of jobs is unknown until the parse task runs.
 
 ```typescript
-import { Task, Param, Result, fanOut } from '@pfenerty/tektonic'; // fanOut only needed for the helper form
+import { Task, Param, Result, fanOut } from '@tektonic-ci/core'; // fanOut only needed for the helper form
 
 // 1. Parse task emits a runtime array (e.g. writes ["api","web"] to the result path).
 const changed = new Result({ name: 'changed-services', type: 'array' });
@@ -726,7 +726,7 @@ it: a dozen image builds submitted at once on a single worker sit `Pending` with
 `Insufficient cpu` and finish no sooner than they would in sequence.
 
 ```typescript
-import { serial, withConcurrency } from '@pfenerty/tektonic';
+import { serial, withConcurrency } from '@tektonic-ci/core';
 
 new Pipeline({
   tasks: [
@@ -750,7 +750,7 @@ clauses), `retries`, `timeout`, `matrix` — applied only for that one pipeline 
 **same task instance** can be conditional in one pipeline and unconditional in another.
 
 ```typescript
-import { gated } from '@pfenerty/tektonic';
+import { gated } from '@tektonic-ci/core';
 
 const pipeline = new Pipeline({
   tasks: [
@@ -885,9 +885,9 @@ import {
     DEFAULT_BASE_IMAGE,
     sh,
     nu,
-} from '@pfenerty/tektonic';
-import { gcs } from '@pfenerty/tektonic-cache-gcs';
-import { GitHubStatusReporter } from '@pfenerty/tektonic-reporter-github';
+} from '@tektonic-ci/core';
+import { gcs } from '@tektonic-ci/cache-gcs';
+import { GitHubStatusReporter } from '@tektonic-ci/reporter-github';
 
 const nodeImage = 'ghcr.io/pfenerty/apko-cicd/nodejs:22';
 const syftImage = 'ghcr.io/pfenerty/apko-cicd/syft:1.42.3';

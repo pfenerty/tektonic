@@ -13,8 +13,8 @@ off unless you turn it on.
 
 | Store | Package | Class | Factory | Storage | Needs a workspace |
 |---|---|---|---|---|---|
-| Workspace (default) | `@pfenerty/tektonic` | `WorkspaceArtifactStore` | _(no factory; omit `artifactStore`)_ | a per-producer subtree of the pipeline's workspace | yes |
-| GCS | `@pfenerty/tektonic-cache-gcs` | `GcsArtifactStore` | `gcsArtifacts({ bucket, prefix?, … })` | a tarball per artifact in a GCS bucket | no |
+| Workspace (default) | `@tektonic-ci/core` | `WorkspaceArtifactStore` | _(no factory; omit `artifactStore`)_ | a per-producer subtree of the pipeline's workspace | yes |
+| GCS | `@tektonic-ci/cache-gcs` | `GcsArtifactStore` | `gcsArtifacts({ bucket, prefix?, … })` | a tarball per artifact in a GCS bucket | no |
 
 `WorkspaceArtifactStore` stays in core for the same reason `PvcBackend` does: core depends on
 it structurally. It is the default when `artifactStore` is omitted, and its `needsWorkspace` is
@@ -34,7 +34,7 @@ has to stop sharing a volume, and an artifact is usually the last thing forcing 
 **neither task binds a workspace for the artifact at all**:
 
 ```typescript
-import { gcsArtifacts } from '@pfenerty/tektonic-cache-gcs';
+import { gcsArtifacts } from '@tektonic-ci/cache-gcs';
 
 const store = gcsArtifacts({ bucket: 'my-ci-artifacts', prefix: 'runs/' });
 
@@ -81,7 +81,7 @@ it is the one directory Tekton mounts on every step.
 ## The `ArtifactStore` interface
 
 ```typescript
-import type { ArtifactStore, ArtifactStoreCtx, TaskArtifact, TaskStepSpec } from '@pfenerty/tektonic';
+import type { ArtifactStore, ArtifactStoreCtx, TaskArtifact, TaskStepSpec } from '@tektonic-ci/core';
 
 export class BucketStore implements ArtifactStore {
   readonly type = 'bucket';
@@ -185,7 +185,7 @@ cross-pod file. The disambiguation is fixed in [ADR 0001](adr/0001-artifacts-and
 
 ## Testing a store
 
-`synthTask` and `synthPipeline` from `@pfenerty/tektonic/testing` render a task in memory, so a
+`synthTask` and `synthPipeline` from `@tektonic-ci/core/testing` render a task in memory, so a
 store is testable without a cluster:
 
 ```typescript

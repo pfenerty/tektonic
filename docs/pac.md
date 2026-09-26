@@ -13,7 +13,7 @@ Bitbucket, Gitea) for you.
 ## What it generates
 
 ```typescript
-import { GitPipeline, TektonicProject, TRIGGER_EVENTS } from '@pfenerty/tektonic';
+import { GitPipeline, TektonicProject, TRIGGER_EVENTS } from '@tektonic-ci/core';
 
 new TektonicProject({
   name: 'ocidex',
@@ -241,7 +241,7 @@ Passing `targets` **replaces** that default, so keep a `PacTarget` in the list i
 PAC output:
 
 ```typescript
-import { PacTarget, TektonTarget, TektonicProject } from '@pfenerty/tektonic';
+import { PacTarget, TektonTarget, TektonicProject } from '@tektonic-ci/core';
 
 new TektonicProject({
   namespace: 'ci',

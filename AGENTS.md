@@ -96,7 +96,7 @@ Renovate is self-hosted, so `postUpgradeTasks` in `renovate.json` re-synthesizes
 
 ## Cross-Repo Planning
 
-`tektonic` (`@pfenerty/tektonic`) is the TypeScript library consumed by `ocidex` (`make tekton-synth`) and `homelab/tekton-pipelines/`. It sits in the middle of the dependency chain: `apko-cicd → tektonic → ocidex/homelab`. Cross-cutting initiatives that span multiple repos are tracked in `~/code/common/` (issue prefix: `plan`).
+`tektonic` (`@tektonic-ci/core`) is the TypeScript library consumed by `ocidex` (`make tekton-synth`) and `homelab/tekton-pipelines/`. It sits in the middle of the dependency chain: `apko-cicd → tektonic → ocidex/homelab`. Cross-cutting initiatives that span multiple repos are tracked in `~/code/common/` (issue prefix: `plan`).
 
 - `bd list` here shows only this repo's issues — cross-repo hydration is not yet implemented in beads
 - **Unified view:** `flox activate -d ~/code/ocidex -- nu ~/code/common/bd-all.nu`

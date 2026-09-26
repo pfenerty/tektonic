@@ -59,7 +59,7 @@ When a tool expects a file (a Docker registry config, a kubeconfig, a TLS cert),
 project a single key to a specific file path:
 
 ```typescript
-import { Task, TaskVolumeSpec } from '@pfenerty/tektonic';
+import { Task, TaskVolumeSpec } from '@tektonic-ci/core';
 
 const dockerConfig: TaskVolumeSpec = {
   name: 'docker-config',

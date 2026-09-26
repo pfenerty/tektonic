@@ -1,9 +1,27 @@
 # Changelog
 
-Notable changes to `@pfenerty/tektonic` and its provider packages, which version together.
-This file starts at the first change after 2.0.0; earlier history is in the git log.
+Notable changes to `@tektonic-ci/core` and its provider packages, which version together
+until each provider moves to a repo of its own. This file starts at the first change after
+2.0.0; earlier history is in the git log.
 
-## Unreleased
+## 2.1.0
+
+### Renamed: the packages are now published under `@tektonic-ci`
+
+The repo moved to the `tektonic-ci` GitHub org (`tektonic-ci/core`), and the packages moved
+to the npm scope that matches it ([ADR 0002](docs/adr/0002-npm-scope-and-versioning.md)):
+
+| Was | Now |
+|---|---|
+| `@pfenerty/tektonic` | `@tektonic-ci/core` |
+| `@pfenerty/tektonic-reporter-github` | `@tektonic-ci/reporter-github` |
+| `@pfenerty/tektonic-cache-gcs` | `@tektonic-ci/cache-gcs` |
+
+The API is unchanged apart from the entries below, so migrating is a rename. Change the
+dependency names in `package.json` and every import, including subpaths:
+`@pfenerty/tektonic/testing` becomes `@tektonic-ci/core/testing`. The CLI binary is still
+`tektonic`. The providers' peer dependency is now `@tektonic-ci/core` `^2`. The
+`@pfenerty/*` packages get no further releases and are deprecated in favour of these.
 
 ### Fixed: reporters differing only in `failOnError` no longer duplicate the pending and reconcile tasks
 

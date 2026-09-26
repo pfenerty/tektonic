@@ -1,6 +1,6 @@
 # Testing your pipelines
 
-A pipeline definition is code, so it can be unit-tested like code. `@pfenerty/tektonic/testing`
+A pipeline definition is code, so it can be unit-tested like code. `@tektonic-ci/core/testing`
 synthesizes a pipeline or a task **in memory** — no files written, no cluster — and wraps the
 result for the assertions tests actually make: is this task present, what gates it, what does it
 run after, what params are bound.
@@ -11,7 +11,7 @@ npm install --save-dev vitest   # or your runner of choice
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { synthPipeline } from '@pfenerty/tektonic/testing';
+import { synthPipeline } from '@tektonic-ci/core/testing';
 import { prPipeline } from './pipeline';   // your own definition
 ```
 
