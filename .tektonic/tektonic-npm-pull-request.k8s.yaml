@@ -87,6 +87,8 @@ spec:
           kind: Task
           name: tektonic-test-npm
         workspaces:
+          - name: cache
+            workspace: cache
           - name: workspace
             workspace: workspace
       - name: build-npm
@@ -102,6 +104,8 @@ spec:
           kind: Task
           name: tektonic-build-npm
         workspaces:
+          - name: cache
+            workspace: cache
           - name: workspace
             workspace: workspace
       - name: anchore-scan
@@ -118,10 +122,13 @@ spec:
           kind: Task
           name: tektonic-anchore-scan
         workspaces:
+          - name: cache
+            workspace: cache
           - name: workspace
             workspace: workspace
     workspaces:
       - name: workspace
+      - name: cache
   taskRunTemplate:
     podTemplate:
       env:
@@ -149,3 +156,6 @@ spec:
           resources:
             requests:
               storage: 3Gi
+    - name: cache
+      persistentVolumeClaim:
+        claimName: tektonic-cache

@@ -5,12 +5,12 @@ import {
     TRIGGER_EVENTS,
     PAC_PARAMS,
     DEFAULT_BASE_IMAGE,
+    Workspace,
     sh,
     nu,
 } from "../packages/tektonic/dist/index.js";
-// The GCS backend and the GitHub reporter are separate packages: this file consumes them
-// exactly as any other project does, through their own package roots.
-import { gcs, DEFAULT_GCS_CACHE_IMAGE } from "../packages/tektonic-cache-gcs/dist/index.js";
+// The GitHub reporter is a separate package: this file consumes it exactly as any other
+// project does, through its own package root.
 import { GitHubStatusReporter } from "../packages/tektonic-reporter-github/dist/index.js";
 
 // ─── Images ──────────────────────────────────────────────────────────────────
@@ -28,14 +28,12 @@ const sourceBranchParam = PAC_PARAMS.sourceBranch;
 // instead of injecting a separate github-token secret per step.
 const statusReporter = new GitHubStatusReporter({ skipTokenInjection: true });
 
-// ─── Cache backend ──────────────────────────────────────────────────────────
-// GCS bucket for caching build artifacts. Requires Workload Identity on GKE.
-const gcsBucket = "tektonic-ci-cache";
-// The GCS cache steps need `gcloud` on top of nushell/zstd, which the project-level
-// injectedStepImage below does not carry — so this backend names its own image. Declared
-// once here rather than per cache.
-const cacheBackend = (prefix: string) =>
-    gcs({ bucket: gcsBucket, prefix, image: DEFAULT_GCS_CACHE_IMAGE });
+// ─── Cache workspace ────────────────────────────────────────────────────────
+// CI runs on the homelab Talos cluster, so caches use the default PVC backend. Every cache
+// archives into this one workspace, keyed by cache name. Its claim (`tektonic-cache`, on
+// local-path) is created by homelab in talos-cluster/flux/apps/tektonic-ci. tektonic emits
+// only the `claimName` reference, not the claim itself.
+const cacheWs = new Workspace({ name: "cache" });
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 const npmTest = new Task({
@@ -46,7 +44,7 @@ const npmTest = new Task({
             name: "npm",
             key: ["package-lock.json"],
             paths: ["node_modules"],
-            backend: cacheBackend("npm/"),
+            workspace: cacheWs,
             compress: true,
             workingDir: "$(workspaces.workspace.path)",
         },
@@ -115,7 +113,7 @@ const npmBuild = new Task({
             name: "npm",
             key: ["package-lock.json"],
             paths: ["node_modules"],
-            backend: cacheBackend("npm/"),
+            workspace: cacheWs,
             compress: true,
             workingDir: "$(workspaces.workspace.path)",
         },
@@ -143,7 +141,7 @@ const anchoreScann = new Task({
             name: "grype-db",
             key: [],
             paths: ["grype-db"],
-            backend: cacheBackend("grype/"),
+            workspace: cacheWs,
             compress: true,
             forceSave: true,
             maxEntries: 1,
@@ -263,14 +261,15 @@ const prPipeline = new GitPipeline({
 
 // ─── Synthesize ──────────────────────────────────────────────────────────────
 // In-repo PAC PipelineRun templates under .tektonic/, read by the PAC operator.
-// The PipelineRun ServiceAccount ("tekton-triggers") is expected to be pre-created
-// and annotated for GKE Workload Identity (for GCS cache access) out of band.
+// The PipelineRun ServiceAccount ("tekton-triggers") and the cache claim are created by
+// homelab (talos-cluster/flux/apps/tektonic-ci), along with the PAC Repository.
 new TektonicProject({
     name: "tektonic",
     namespace: "tektonic-ci",
     pipelines: [pushPipeline, prPipeline],
     outdir: ".tektonic",
     workspaceStorageSize: "3Gi",
+    caches: [{ workspace: cacheWs, storageSize: "5Gi", storageClassName: "local-path" }],
     // Image for the steps tektonic injects (git clone, cache restore/save, status
     // reporting). The library falls back to a neutral public image providing sh + git
     // only; this project's compressed caches and status reporter need nushell, tar and
