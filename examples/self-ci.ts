@@ -85,7 +85,7 @@ const npmTest = new Task({
             `,
         },
         {
-            // .tektonic/ is generated from this file, so its image tags are output, not
+            // .tekton/ is generated from this file, so its image tags are output, not
             // source — which is exactly how Renovate came to bump the emitted YAML and
             // leave the pins above behind (see renovate.json). `tektonic check` is the
             // guard: it synthesizes into a temp dir and diffs against what is committed,
@@ -260,14 +260,15 @@ const prPipeline = new GitPipeline({
 });
 
 // ─── Synthesize ──────────────────────────────────────────────────────────────
-// In-repo PAC PipelineRun templates under .tektonic/, read by the PAC operator.
+// In-repo PAC PipelineRun templates under .tekton/, read by the PAC operator.
 // The PipelineRun ServiceAccount ("tekton-triggers") and the cache claim are created by
-// homelab (talos-cluster/flux/apps/tektonic-ci), along with the PAC Repository.
+// homelab (talos-cluster/flux/apps/tektonic-ci), along with the PAC Repository — so no
+// `repository` here: one owner for the CR, and nothing but Tekton resources under .tekton/.
 new TektonicProject({
     name: "tektonic",
     namespace: "tektonic-ci",
     pipelines: [pushPipeline, prPipeline],
-    outdir: ".tektonic",
+    outdir: ".tekton",
     workspaceStorageSize: "3Gi",
     caches: [{ workspace: cacheWs, storageSize: "5Gi", storageClassName: "local-path" }],
     // Image for the steps tektonic injects (git clone, cache restore/save, status
@@ -275,7 +276,6 @@ new TektonicProject({
     // only; this project's compressed caches and status reporter need nushell, tar and
     // zstd, so it names an image that has them.
     injectedStepImage: DEFAULT_BASE_IMAGE,
-    repository: { url: "https://github.com/tektonic-ci/core" },
     // Provide the GitHub token (for status reporting + SARIF upload) via PAC's git-auth
     // secret at the pod level, so every step sees GITHUB_TOKEN.
     podTemplateEnv: [

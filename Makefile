@@ -4,11 +4,11 @@
 install:
 	flox activate -- npm install
 
-## Synthesize the self-CI PAC artifacts into .tektonic/
+## Synthesize the self-CI PAC artifacts into .tekton/
 synth:
 	flox activate -- npm run synth
 
-## Fail if the committed .tektonic/ output is stale, missing or orphaned
+## Fail if the committed .tekton/ output is stale, missing or orphaned
 check:
 	flox activate -- npm run check
 

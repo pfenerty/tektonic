@@ -3,10 +3,10 @@ kind: PipelineRun
 metadata:
   annotations:
     pipelinesascode.tekton.dev/max-keep-runs: "5"
-    pipelinesascode.tekton.dev/on-event: "[push]"
+    pipelinesascode.tekton.dev/on-event: "[pull_request]"
     pipelinesascode.tekton.dev/on-target-branch: "[*]"
-    pipelinesascode.tekton.dev/task: "[.tektonic/tasks/set-status-pending-npm-push.k8s.yaml, .tektonic/tasks/git-clone.k8s.yaml, .tektonic/tasks/test-npm.k8s.yaml, .tektonic/tasks/anchore-scan.k8s.yaml, .tektonic/tasks/reconcile-status-npm-push.k8s.yaml, .tektonic/tasks/set-status-pending-npm-pull-request.k8s.yaml, .tektonic/tasks/build-npm.k8s.yaml, .tektonic/tasks/reconcile-status-npm-pull-request.k8s.yaml]"
-  name: tektonic-npm-push
+    pipelinesascode.tekton.dev/task: "[.tekton/tasks/set-status-pending-npm-push.k8s.yaml, .tekton/tasks/git-clone.k8s.yaml, .tekton/tasks/test-npm.k8s.yaml, .tekton/tasks/anchore-scan.k8s.yaml, .tekton/tasks/reconcile-status-npm-push.k8s.yaml, .tekton/tasks/set-status-pending-npm-pull-request.k8s.yaml, .tekton/tasks/build-npm.k8s.yaml, .tekton/tasks/reconcile-status-npm-pull-request.k8s.yaml]"
+  name: tektonic-npm-pull-request
 spec:
   params:
     - name: project-name
@@ -21,7 +21,7 @@ spec:
       value: "{{ repo_url }}"
   pipelineSpec:
     finally:
-      - name: reconcile-status-npm-push
+      - name: reconcile-status-npm-pull-request
         params:
           - name: repo-full-name
             value: $(params.repo-full-name)
@@ -29,11 +29,13 @@ spec:
             value: $(params.revision)
           - name: status-test-npm
             value: $(tasks.test-npm.status)
+          - name: status-build-npm
+            value: $(tasks.build-npm.status)
           - name: status-anchore-scan
             value: $(tasks.anchore-scan.status)
         taskRef:
           kind: Task
-          name: tektonic-reconcile-status-npm-push
+          name: tektonic-reconcile-status-npm-pull-request
     params:
       - description: Repository name, bound by PAC from repo_name
         name: project-name
@@ -50,7 +52,7 @@ spec:
         name: url
         type: string
     tasks:
-      - name: set-status-pending-npm-push
+      - name: set-status-pending-npm-pull-request
         params:
           - name: repo-full-name
             value: $(params.repo-full-name)
@@ -60,7 +62,7 @@ spec:
           - git-clone
         taskRef:
           kind: Task
-          name: tektonic-set-status-pending-npm-push
+          name: tektonic-set-status-pending-npm-pull-request
       - name: git-clone
         params:
           - name: url
@@ -80,10 +82,27 @@ spec:
           - name: revision
             value: $(params.revision)
         runAfter:
-          - set-status-pending-npm-push
+          - set-status-pending-npm-pull-request
         taskRef:
           kind: Task
           name: tektonic-test-npm
+        workspaces:
+          - name: cache
+            workspace: cache
+          - name: workspace
+            workspace: workspace
+      - name: build-npm
+        params:
+          - name: repo-full-name
+            value: $(params.repo-full-name)
+          - name: revision
+            value: $(params.revision)
+        runAfter:
+          - test-npm
+          - set-status-pending-npm-pull-request
+        taskRef:
+          kind: Task
+          name: tektonic-build-npm
         workspaces:
           - name: cache
             workspace: cache
@@ -98,7 +117,7 @@ spec:
           - name: revision
             value: $(params.revision)
         runAfter:
-          - set-status-pending-npm-push
+          - set-status-pending-npm-pull-request
         taskRef:
           kind: Task
           name: tektonic-anchore-scan

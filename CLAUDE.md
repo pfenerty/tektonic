@@ -126,7 +126,7 @@ Work is NOT complete until pushed. Before ending a session:
 
 ## CI and Automation
 
-**All CI and automation runs through tektonic itself** — the pipelines in `.tektonic/`,
+**All CI and automation runs through tektonic itself** — the pipelines in `.tekton/`,
 synthesized from [`examples/self-ci.ts`](examples/self-ci.ts). Do not reach for GitHub
 Actions to automate something; if a job needs adding, it belongs in the self-CI pipeline.
 
@@ -136,7 +136,7 @@ CircleCI as OIDC issuers — a self-hosted cluster cannot be a trusted publisher
 constraint is the whole reason it exists; nothing else inherits the exemption.
 
 **`.github/` holds that one file and nothing else**, and the exemption has already been
-tested once: a `renovate-synth.yml` workflow was written to re-synthesize `.tektonic/`
+tested once: a `renovate-synth.yml` workflow was written to re-synthesize `.tekton/`
 after an image bump, then rejected (tektonic-4p3) because self-hosted Renovate's
 `postUpgradeTasks` does the same job inside the rule. If you find yourself reaching for a
 second workflow, that is the precedent — solve it in `examples/self-ci.ts`, in
@@ -151,7 +151,7 @@ write the patch, verify it, put the exact content in the issue, and hand it to a
 tektonic-46j.11 is the open instance of this, confirmed four times.
 
 Renovate is **self-hosted**, so `postUpgradeTasks` in `renovate.json` is available and is
-what re-synthesizes `.tektonic/` after an image bump. It needs `allowedCommands` in the
+what re-synthesizes `.tekton/` after an image bump. It needs `allowedCommands` in the
 self-hosted global config to admit `^npm ci` and `^npm run synth`, or the tasks are
 skipped silently.
 

@@ -17,8 +17,8 @@ All of these run from the repository root, across every workspace package.
 npm run build         # tsc -b across the workspace → packages/*/dist/
 npm test              # provider-import check, build, then the test suite (vitest)
 npm run lint:imports  # fail if a provider package reaches into core's internals
-npm run synth         # synthesize this repo's own CI → .tektonic/
-npm run check         # fail if the committed .tektonic/ output is stale
+npm run synth         # synthesize this repo's own CI → .tekton/
+npm run check         # fail if the committed .tekton/ output is stale
 npm run graph         # print the self-CI task DAG (FORMAT=mermaid for a flowchart)
 npm run lint:scripts  # lint extracted .sh/.bash/.nu/.py files
 ```
@@ -98,10 +98,10 @@ Run `tektonic lint` (or `npm run lint:scripts`) to syntax-check any `.sh`/`.bash
 ## Dependency updates
 
 Renovate opens the dependency PRs. Image pins are the awkward case: they live in TypeScript,
-and `.tektonic/` is synthesized from it, so the tags in the committed manifests are output.
+and `.tekton/` is synthesized from it, so the tags in the committed manifests are output.
 
 Renovate only ever saw that output. Its Ansible manager matches any `tasks/*.yaml`, so
-`.tektonic/tasks/*.k8s.yaml` was rewritten by accident of the path while the TypeScript that
+`.tekton/tasks/*.k8s.yaml` was rewritten by accident of the path while the TypeScript that
 generates it stayed behind — the bumps were real, `npm run check` was red, and the next
 `npm run synth` would have reverted them.
 

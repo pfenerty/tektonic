@@ -81,7 +81,7 @@ Recover a clobbered set from the committed JSONL, which holds whatever was last 
 
 ## CI and Automation
 
-All CI and automation runs through tektonic itself — the pipelines in `.tektonic/`,
+All CI and automation runs through tektonic itself — the pipelines in `.tekton/`,
 synthesized from `examples/self-ci.ts`. Do not add GitHub Actions workflows. The one
 exemption is `.github/workflows/publish.yml`, which exists only because npm's trusted
 publishing cannot accept a self-hosted cluster as an OIDC issuer. `.github/` holds that
@@ -92,7 +92,7 @@ GitHub API will, for want of `workflow` scope. Write the patch, verify it, recor
 exact content on the issue, and hand it to a human. See CLAUDE.md.
 
 Renovate is self-hosted, so `postUpgradeTasks` in `renovate.json` re-synthesizes
-`.tektonic/` after an image bump. See CLAUDE.md for the `allowedCommands` requirement.
+`.tekton/` after an image bump. See CLAUDE.md for the `allowedCommands` requirement.
 
 ## Cross-Repo Planning
 
